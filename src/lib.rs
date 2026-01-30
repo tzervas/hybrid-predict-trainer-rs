@@ -399,6 +399,220 @@ impl<M, O> HybridTrainer<M, O> {
     }
 }
 
+impl<M, O> HybridTrainer<M, O> {
+    /// Executes a single training step.
+    ///
+    /// This is the main entry point for the training loop. The trainer
+    /// automatically selects the appropriate phase (warmup, full, predict,
+    /// or correct) based on the current state and configuration.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `B` - The batch type containing input data
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The training batch to process
+    ///
+    /// # Returns
+    ///
+    /// A [`StepResult`] containing the loss, phase info, and prediction metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if training diverges or encounters numerical issues.
+    /// The error includes a suggested recovery action when possible.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// for batch in dataloader {
+    ///     let result = trainer.step(&batch)?;
+    ///     println!("Step {}: loss={:.4}, phase={:?}",
+    ///         trainer.current_step(),
+    ///         result.loss,
+    ///         result.phase
+    ///     );
+    /// }
+    /// ```
+    pub fn step<B>(&mut self, batch: &B) -> HybridResult<StepResult>
+    where
+        B: Batch,
+        M: Model<B>,
+        O: Optimizer<M, B>,
+    {
+        let start_time = Instant::now();
+
+        // Get current phase decision
+        let decision = self.phase_controller.select_next_phase(&self.state);
+        let phase = decision.phase();
+
+        // Update predictor confidence for phase controller
+        let confidence = self.dynamics_model.prediction_confidence(&self.state);
+        self.phase_controller.set_predictor_confidence(confidence);
+
+        // Execute the appropriate phase
+        let (loss, was_predicted, prediction_error) = match phase {
+            Phase::Warmup | Phase::Full => {
+                self.execute_full_step(batch)?
+            }
+            Phase::Predict => {
+                self.execute_predict_step(batch)?
+            }
+            Phase::Correct => {
+                self.execute_correct_step(batch)?
+            }
+        };
+
+        // Check for divergence
+        let divergence_result = self.divergence_monitor.check(&self.state, prediction_error);
+        if divergence_result.level > error::DivergenceLevel::Caution {
+            let recovery = self.phase_controller.handle_divergence(divergence_result.level);
+            if !recovery.can_continue() {
+                return Err((
+                    HybridTrainingError::PredictionDivergence {
+                        actual: loss,
+                        predicted: self.state.loss,
+                        delta: (loss - self.state.loss).abs(),
+                        step: self.state.step,
+                    },
+                    Some(recovery),
+                ));
+            }
+        }
+
+        // Update state
+        self.state.step += 1;
+        self.state.loss = loss;
+        self.state.loss_history.push(loss);
+
+        // Update divergence monitor
+        self.divergence_monitor.observe(loss, self.state.gradient_norm);
+
+        // Record metrics
+        let step_metrics = if self.config.collect_metrics {
+            Some(self.metrics.record_step_data(
+                self.state.step,
+                loss,
+                phase,
+                was_predicted,
+                prediction_error,
+                confidence,
+            ))
+        } else {
+            None
+        };
+
+        let elapsed_ms = start_time.elapsed().as_secs_f64() * 1000.0;
+
+        Ok(StepResult {
+            loss,
+            phase,
+            was_predicted,
+            prediction_error,
+            confidence,
+            step_time_ms: elapsed_ms,
+            metrics: step_metrics,
+        })
+    }
+
+    /// Executes a full training step (forward + backward + optimizer step).
+    ///
+    /// Used during Warmup and Full phases.
+    fn execute_full_step<B>(&mut self, batch: &B) -> HybridResult<(f32, bool, Option<f32>)>
+    where
+        B: Batch,
+        M: Model<B>,
+        O: Optimizer<M, B>,
+    {
+        let mut model = self.model.write();
+        let mut optimizer = self.optimizer.write();
+
+        // Zero gradients
+        optimizer.zero_grad();
+
+        // Forward pass
+        let loss = model.forward(batch)?;
+
+        // Backward pass
+        let grad_info = model.backward()?;
+
+        // Optimizer step
+        optimizer.step(&mut *model, &grad_info)?;
+
+        // Update training state with gradient info
+        self.state.gradient_norm = grad_info.gradient_norm;
+        self.state.gradient_norm_history.push(grad_info.gradient_norm);
+
+        // Train the dynamics model during full steps (not warmup)
+        if self.phase_controller.is_warmup_complete() {
+            self.dynamics_model.observe_gradient(&self.state, &grad_info);
+        }
+
+        Ok((loss, false, None))
+    }
+
+    /// Executes a predictive step (forward only, apply predicted weight delta).
+    ///
+    /// Used during Predict phase - skips backward pass for speedup.
+    fn execute_predict_step<B>(&mut self, batch: &B) -> HybridResult<(f32, bool, Option<f32>)>
+    where
+        B: Batch,
+        M: Model<B>,
+    {
+        let mut model = self.model.write();
+
+        // Get prediction from dynamics model
+        let (prediction, _uncertainty) = self.dynamics_model.predict_y_steps(&self.state, 1);
+
+        // Apply predicted weight delta
+        model.apply_weight_delta(&prediction.weight_delta)?;
+
+        // Forward pass to get actual loss (for validation)
+        let actual_loss = model.forward(batch)?;
+
+        // Compute prediction error
+        let prediction_error = (actual_loss - prediction.predicted_final_loss).abs();
+
+        Ok((actual_loss, true, Some(prediction_error)))
+    }
+
+    /// Executes a correction step (apply residual corrections).
+    ///
+    /// Used during Correct phase to adjust for accumulated prediction errors.
+    fn execute_correct_step<B>(&mut self, batch: &B) -> HybridResult<(f32, bool, Option<f32>)>
+    where
+        B: Batch,
+        M: Model<B>,
+    {
+        let mut model = self.model.write();
+
+        // Apply residual correction
+        let correction = self.residual_corrector.compute_simple_correction(&self.state);
+        if let Some(delta) = correction {
+            model.apply_weight_delta(&delta)?;
+        }
+
+        // Forward pass to validate correction
+        let loss = model.forward(batch)?;
+
+        Ok((loss, false, None))
+    }
+
+    /// Forces the trainer into full training mode for the specified number of steps.
+    ///
+    /// Useful for recovery from divergence or manual intervention.
+    ///
+    /// # Arguments
+    ///
+    /// * `steps` - Number of full steps to force
+    pub fn force_full_phase(&mut self, steps: usize) {
+        self.phase_controller.force_phase(Phase::Full);
+        // The phase controller will handle the step count
+        let _ = steps; // TODO: Implement step count tracking
+    }
+}
+
 /// Result of a single training step.
 ///
 /// Contains the loss value, phase information, and prediction metadata
@@ -436,10 +650,14 @@ pub struct StepResult {
 /// ```
 pub mod prelude {
     pub use crate::{
+        Batch,
+        GradientInfo,
         HybridTrainer,
         HybridTrainerConfig,
         HybridTrainingError,
         HybridResult,
+        Model,
+        Optimizer,
         Phase,
         PhaseDecision,
         RecoveryAction,

@@ -296,6 +296,42 @@ impl ResidualCorrector {
     pub fn statistics(&self) -> &CorrectionStatistics {
         &self.statistics
     }
+
+    /// Computes a simple weight delta correction based on current state.
+    ///
+    /// This is a simplified version that uses only the linear model,
+    /// without requiring access to the full residual store.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Current training state
+    ///
+    /// # Returns
+    ///
+    /// An optional weight delta to apply, or None if no correction needed.
+    pub fn compute_simple_correction(&self, state: &TrainingState) -> Option<WeightDelta> {
+        // Only apply corrections if we have enough history
+        if self.statistics.corrections_applied < 10 {
+            return None;
+        }
+
+        // Use linear model to estimate correction magnitude
+        let features = state.compute_features();
+        let correction_magnitude: f32 = features
+            .iter()
+            .zip(self.linear_model.iter())
+            .map(|(&f, &w)| f * w)
+            .sum::<f32>() + self.loss_bias;
+
+        // Only apply if correction is significant
+        if correction_magnitude.abs() < 0.01 {
+            return None;
+        }
+
+        // Create a small weight delta in the gradient direction
+        // This is a placeholder - real implementation would store gradient directions
+        Some(WeightDelta::scaled_identity(correction_magnitude * 0.01))
+    }
     
     /// Returns the current residual magnitude EMA.
     pub fn residual_ema(&self) -> f32 {
