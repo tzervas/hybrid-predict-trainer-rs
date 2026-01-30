@@ -44,6 +44,12 @@ use crate::error::HybridResult;
 use crate::predictive::PhasePrediction;
 use crate::state::{TrainingState, WeightDelta};
 
+/// Sigmoid activation function.
+#[allow(dead_code)]
+fn sigmoid(x: f32) -> f32 {
+    1.0 / (1.0 + (-x).exp())
+}
+
 /// Latent state of the RSSM model.
 #[derive(Debug, Clone)]
 pub struct LatentState {
@@ -140,7 +146,7 @@ impl Default for RSSMConfig {
             stochastic_dim: 32,
             num_categoricals: 32,
             ensemble_size: 3,
-            input_dim: 32, // From TrainingState::compute_features
+            input_dim: 64, // From TrainingState::compute_features (64-dim)
             hidden_dim: 128,
             learning_rate: 0.001,
         }
@@ -193,6 +199,7 @@ pub struct RSSMLite {
 
 /// Weights for a GRU cell.
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct GRUWeights {
     /// Update gate weights.
     w_z: Vec<f32>,
@@ -225,9 +232,9 @@ impl GRUWeights {
         };
         
         Self {
-            w_z: random_vec(input_dim * hidden_dim),
-            w_r: random_vec(input_dim * hidden_dim),
-            w_h: random_vec(input_dim * hidden_dim),
+            w_z: random_vec(hidden_dim * input_dim),
+            w_r: random_vec(hidden_dim * input_dim),
+            w_h: random_vec(hidden_dim * input_dim),
             u_z: random_vec(hidden_dim * hidden_dim),
             u_r: random_vec(hidden_dim * hidden_dim),
             u_h: random_vec(hidden_dim * hidden_dim),
@@ -240,6 +247,10 @@ impl GRUWeights {
 
 impl RSSMLite {
     /// Creates a new RSSM-lite model with the given configuration.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if initialization fails.
     pub fn new(config: &PredictorConfig) -> HybridResult<Self> {
         let rssm_config = RSSMConfig::from(config);
         
@@ -275,7 +286,7 @@ impl RSSMLite {
     /// Initializes latent state from training state.
     pub fn initialize_state(&mut self, state: &TrainingState) {
         let features = state.compute_features();
-        
+
         for latent in &mut self.latent_states {
             // Simple initialization: project features to deterministic state
             for (i, &f) in features.iter().enumerate() {
@@ -283,14 +294,84 @@ impl RSSMLite {
                     latent.deterministic[i] = f.tanh();
                 }
             }
-            
+
             // Initialize stochastic state uniformly
             for s in &mut latent.stochastic {
                 *s = 1.0 / self.config.stochastic_dim as f32;
             }
-            
+
             latent.update_combined();
         }
+    }
+
+    /// Performs one GRU step given weights, hidden state, and input.
+    fn gru_step(weights: &GRUWeights, hidden: &[f32], input: &[f32]) -> Vec<f32> {
+        let hidden_dim = hidden.len();
+
+        // Matrix-vector multiply helper for weight matrices (stored as hidden_dim rows x input_dim cols)
+        // Weight layout: w[row * input_dim + col] for W matrices, w[row * hidden_dim + col] for U matrices
+        let matvec_w = |w: &[f32], x: &[f32]| -> Vec<f32> {
+            let input_dim = x.len();
+            let mut result = vec![0.0; hidden_dim];
+            for i in 0..hidden_dim {
+                let mut sum = 0.0;
+                for j in 0..input_dim {
+                    sum += w[i * input_dim + j] * x[j];
+                }
+                result[i] = sum;
+            }
+            result
+        };
+
+        let matvec_u = |u: &[f32], h: &[f32]| -> Vec<f32> {
+            let mut result = vec![0.0; hidden_dim];
+            for i in 0..hidden_dim {
+                let mut sum = 0.0;
+                for j in 0..hidden_dim {
+                    sum += u[i * hidden_dim + j] * h[j];
+                }
+                result[i] = sum;
+            }
+            result
+        };
+
+        // z = sigmoid(W_z·x + U_z·h + b_z)
+        let mut z = matvec_w(&weights.w_z, input);
+        let z_h = matvec_u(&weights.u_z, hidden);
+        for i in 0..hidden_dim {
+            z[i] = sigmoid(z[i] + z_h[i] + weights.b_z[i]);
+        }
+
+        // r = sigmoid(W_r·x + U_r·h + b_r)
+        let mut r = matvec_w(&weights.w_r, input);
+        let r_h = matvec_u(&weights.u_r, hidden);
+        for i in 0..hidden_dim {
+            r[i] = sigmoid(r[i] + r_h[i] + weights.b_r[i]);
+        }
+
+        // h_tilde = tanh(W_h·x + U_h·(r⊙h) + b_h)
+        let mut h_candidate = matvec_w(&weights.w_h, input);
+        let r_h_elem: Vec<f32> = r.iter().zip(hidden.iter()).map(|(&r, &h)| r * h).collect();
+        let h_rec = matvec_u(&weights.u_h, &r_h_elem);
+        for i in 0..hidden_dim {
+            h_candidate[i] = (h_candidate[i] + h_rec[i] + weights.b_h[i]).tanh();
+        }
+
+        // h_new = (1-z)⊙h + z⊙h_tilde
+        (0..hidden_dim)
+            .map(|i| (1.0 - z[i]) * hidden[i] + z[i] * h_candidate[i])
+            .collect()
+    }
+
+    /// Decodes loss prediction from combined state.
+    fn decode_loss(&self, combined_state: &[f32]) -> f32 {
+        let logit: f32 = combined_state
+            .iter()
+            .zip(self.loss_head_weights.iter())
+            .map(|(&s, &w)| s * w)
+            .sum();
+        // Use exp to ensure positive loss values
+        logit.exp().max(1e-6)
     }
     
     /// Predicts training outcome after Y steps.
@@ -300,7 +381,11 @@ impl RSSMLite {
     /// * `state` - Current training state
     /// * `y_steps` - Number of steps to predict ahead
     ///
-    /// # Returns
+/// # Errors
+///
+/// Returns an error if the operation fails.
+///
+/// # Returns
     ///
     /// Prediction with uncertainty estimate.
     #[must_use] 
@@ -328,54 +413,89 @@ impl RSSMLite {
             return (prediction, uncertainty);
         }
 
-        let _features = state.compute_features();
+        let features = state.compute_features();
 
-        // Get predictions from each ensemble member
-        let mut predictions: Vec<f32> = Vec::with_capacity(self.config.ensemble_size);
-        
-        for latent in self.latent_states.iter() {
-            // Simple prediction: dot product of combined state with loss head
-            let pred: f32 = latent.combined
-                .iter()
-                .zip(self.loss_head_weights.iter())
-                .map(|(&s, &w)| s * w)
-                .sum();
-            
-            // Apply step scaling (assume linear loss decay)
-            let step_factor = 1.0 - (y_steps as f32 * 0.001).min(0.5);
-            let scaled_pred = state.loss * step_factor + pred * 0.1;
-            
-            predictions.push(scaled_pred);
+        // Collect trajectories from each ensemble member
+        let mut ensemble_trajectories: Vec<Vec<f32>> = Vec::with_capacity(self.config.ensemble_size);
+
+        for (ensemble_idx, latent) in self.latent_states.iter().enumerate() {
+            let weights = &self.gru_weights[ensemble_idx];
+
+            // Clone current latent state for rollout
+            let mut hidden = latent.deterministic.clone();
+            let stochastic = latent.stochastic.clone();
+
+            // Trajectory for this ensemble member
+            let mut trajectory = Vec::with_capacity(y_steps + 1);
+            trajectory.push(state.loss); // Start with current loss
+
+            // Roll out Y steps
+            for _ in 0..y_steps {
+                // Update deterministic state via GRU
+                hidden = Self::gru_step(weights, &hidden, &features);
+
+                // Build combined state
+                let mut combined = Vec::with_capacity(hidden.len() + stochastic.len());
+                combined.extend_from_slice(&hidden);
+                combined.extend_from_slice(&stochastic);
+
+                // Decode loss prediction
+                let loss_pred = self.decode_loss(&combined);
+                trajectory.push(loss_pred);
+            }
+
+            ensemble_trajectories.push(trajectory);
         }
-        
-        // Compute ensemble statistics
-        // Safety: if no predictions, fall back to current loss
-        if predictions.is_empty() {
-            predictions.push(state.loss);
+
+        // Aggregate ensemble predictions
+        let ensemble_size = ensemble_trajectories.len() as f32;
+
+        // Build mean trajectory
+        let trajectory_length = y_steps + 1;
+        let mut mean_trajectory = vec![0.0; trajectory_length];
+        for trajectory in &ensemble_trajectories {
+            for (i, &loss_val) in trajectory.iter().enumerate() {
+                mean_trajectory[i] += loss_val / ensemble_size;
+            }
         }
-        let mean_pred: f32 = predictions.iter().sum::<f32>() / predictions.len() as f32;
-        let variance: f32 = predictions
+
+        // Final loss prediction is last point in mean trajectory
+        let predicted_final_loss = mean_trajectory[trajectory_length - 1];
+
+        // Compute ensemble variance at final step
+        let final_predictions: Vec<f32> = ensemble_trajectories
             .iter()
-            .map(|&p| (p - mean_pred).powi(2))
-            .sum::<f32>() / predictions.len() as f32;
-        let std = variance.sqrt();
-        
+            .map(|traj| *traj.last().unwrap())
+            .collect();
+
+        let variance: f32 = final_predictions
+            .iter()
+            .map(|&p| (p - predicted_final_loss).powi(2))
+            .sum::<f32>() / ensemble_size;
+
+        // Base uncertainty from ensemble disagreement
+        let base_std = variance.sqrt();
+
+        // Uncertainty grows with prediction horizon (sqrt scaling)
+        let horizon_factor = (y_steps as f32).sqrt();
+        let total_std = base_std * (1.0 + 0.1 * horizon_factor);
+
         let uncertainty = PredictionUncertainty {
-            aleatoric: std * 0.5,
-            epistemic: std * 0.5,
-            total: std,
-            entropy: 0.0, // Would compute from stochastic logits
+            aleatoric: total_std * 0.5,
+            epistemic: total_std * 0.5,
+            total: total_std,
+            entropy: 0.0, // Could compute from stochastic distribution
         };
-        
+
         let prediction = PhasePrediction {
             weight_delta: WeightDelta::empty(),
-            predicted_final_loss: mean_pred,
-            loss_trajectory: vec![state.loss, mean_pred],
-            confidence: 1.0 / (1.0 + std), // Higher std = lower confidence
-            loss_bounds: (mean_pred - 2.0 * std, mean_pred + 2.0 * std),
+            predicted_final_loss,
+            loss_trajectory: mean_trajectory,
+            confidence: 1.0 / (1.0 + total_std), // Higher std = lower confidence
+            loss_bounds: (predicted_final_loss - 2.0 * total_std, predicted_final_loss + 2.0 * total_std),
             num_steps: y_steps,
         };
-        
+
         (prediction, uncertainty)
     }
     
@@ -411,6 +531,10 @@ impl RSSMLite {
     /// * `state_before` - State before training
     /// * `state_after` - State after training
     /// * `loss_trajectory` - Observed loss values during training
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the update fails.
     pub fn update_from_observation(
         &mut self,
         state_before: &TrainingState,
@@ -525,6 +649,10 @@ pub trait DynamicsModel: Send + Sync {
     fn prediction_confidence(&self, state: &TrainingState) -> f32;
     
     /// Updates from observation.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the update fails.
     fn update_from_observation(
         &mut self,
         state_before: &TrainingState,

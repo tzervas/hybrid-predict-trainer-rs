@@ -61,18 +61,23 @@ impl MultiScaleEMA {
         } else {
             self.fast = 0.75 * self.fast + 0.25 * value;
             self.medium = 0.9375 * self.medium + 0.0625 * value;
-            self.slow = 0.984375 * self.slow + 0.015625 * value;
+            self.slow = 0.984_375 * self.slow + 0.015_625 * value;
         }
     }
-    #[must_use] 
+    /// Returns the fast EMA value.
+    #[must_use]
     pub fn fast(&self) -> f32 { self.fast }
-    #[must_use] 
+    /// Returns the medium EMA value.
+    #[must_use]
     pub fn medium(&self) -> f32 { self.medium }
-    #[must_use] 
+    /// Returns the slow EMA value.
+    #[must_use]
     pub fn slow(&self) -> f32 { self.slow }
-    #[must_use] 
+    /// Returns the spread between fast and slow EMAs.
+    #[must_use]
     pub fn spread(&self) -> f32 { self.fast - self.slow }
-    #[must_use] 
+    /// Returns whether the EMA has sufficient samples to be reliable.
+    #[must_use]
     pub fn is_warm(&self) -> bool { self.count >= 16 }
 }
 
@@ -89,10 +94,12 @@ impl Default for RunningStats {
 }
 
 impl RunningStats {
-    #[must_use] 
+    /// Creates a new running statistics tracker.
+    #[must_use]
     pub fn new() -> Self {
         Self { mean: 0.0, variance: 0.0, count: 0 }
     }
+    /// Updates the statistics with a new value.
     pub fn update(&mut self, value: f64) {
         self.count += 1;
         let delta = value - self.mean;
@@ -100,7 +107,8 @@ impl RunningStats {
         let delta2 = value - self.mean;
         self.variance += delta * delta2;
     }
-    #[must_use] 
+    /// Normalizes a value using the running mean and standard deviation.
+    #[must_use]
     pub fn normalize(&self, value: f64) -> f32 {
         if self.count < 2 { return 0.0; }
         let std_dev = (self.variance / self.count as f64).sqrt();
@@ -108,9 +116,11 @@ impl RunningStats {
         let normalized = (value - self.mean) / std_dev;
         normalized.clamp(-10.0, 10.0) as f32
     }
-    #[must_use] 
+    /// Returns the current running mean.
+    #[must_use]
     pub fn mean(&self) -> f64 { self.mean }
-    #[must_use] 
+    /// Returns the current standard deviation.
+    #[must_use]
     pub fn std_dev(&self) -> f64 {
         if self.count < 2 { return 0.0; }
         (self.variance / self.count as f64).sqrt()
@@ -613,7 +623,7 @@ impl WeightDelta {
 /// Projects the feature vector to a fixed-size latent space using
 /// a learned linear transformation.
 pub struct LinearStateEncoder {
-    feature_dim: usize,
+    _feature_dim: usize,
     latent_dim: usize,
     // Projection matrix would be stored here
 }
@@ -627,7 +637,7 @@ impl LinearStateEncoder {
     #[must_use] 
     pub fn new(latent_dim: usize) -> Self {
         Self {
-            feature_dim: 32, // From TrainingState::compute_features
+            _feature_dim: 32, // From TrainingState::compute_features
             latent_dim,
         }
     }

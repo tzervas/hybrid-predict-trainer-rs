@@ -252,7 +252,7 @@ pub struct DefaultPhaseController {
     config: PhaseControllerConfig,
     
     /// Steps remaining in current phase.
-    steps_remaining: usize,
+    _steps_remaining: usize,
     
     /// Whether warmup has completed.
     warmup_complete: bool,
@@ -304,7 +304,7 @@ impl DefaultPhaseController {
         let ctrl_config = PhaseControllerConfig::from(config);
         Self {
             current_phase: Phase::Warmup,
-            steps_remaining: ctrl_config.warmup_steps,
+            _steps_remaining: ctrl_config.warmup_steps,
             config: ctrl_config,
             warmup_complete: false,
             predictor_confidence: 0.0,
@@ -465,9 +465,9 @@ impl PhaseController for DefaultPhaseController {
 /// * `from` - Source phase
 /// * `to` - Destination phase
 ///
-/// # Returns
+/// # Errors
 ///
-/// `Ok(())` if transition is valid, error otherwise.
+/// Returns an error if the transition is not allowed by the state machine.
 pub fn validate_transition(from: Phase, to: Phase) -> HybridResult<()> {
     let valid = match (from, to) {
         // Warmup can only go to Full

@@ -132,7 +132,7 @@ pub struct ResidualCorrector {
     linear_model: Vec<f32>,
     
     /// Feature dimension for the linear model.
-    feature_dim: usize,
+    _feature_dim: usize,
     
     /// Running estimate of loss correction bias.
     loss_bias: f32,
@@ -153,7 +153,7 @@ impl ResidualCorrector {
             config: CorrectorConfig::default(),
             statistics: CorrectionStatistics::default(),
             linear_model: vec![0.0; feature_dim],
-            feature_dim,
+            _feature_dim: feature_dim,
             loss_bias: 0.0,
             residual_ema: 0.0,
             ema_decay: 0.9,
@@ -168,7 +168,7 @@ impl ResidualCorrector {
             config,
             statistics: CorrectionStatistics::default(),
             linear_model: vec![0.0; feature_dim],
-            feature_dim,
+            _feature_dim: feature_dim,
             loss_bias: 0.0,
             residual_ema: 0.0,
             ema_decay: 0.9,
@@ -364,7 +364,7 @@ pub struct CorrectionExecutor {
     current_step: usize,
     
     /// Maximum correction magnitude.
-    max_correction_magnitude: f32,
+    _max_correction_magnitude: f32,
     
     /// Collected statistics.
     statistics: CorrectionStatistics,
@@ -380,7 +380,7 @@ impl CorrectionExecutor {
         Self {
             validation_samples,
             current_step: 0,
-            max_correction_magnitude,
+            _max_correction_magnitude: max_correction_magnitude,
             statistics: CorrectionStatistics::default(),
             start_time: None,
         }

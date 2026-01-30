@@ -150,7 +150,7 @@ pub struct BanditSelector {
     last_selection: Option<usize>,
     
     /// Feature dimension for contextual bandit.
-    feature_dim: usize,
+    _feature_dim: usize,
     
     /// `LinUCB` A matrices (one per arm).
     a_matrices: Vec<Vec<f64>>,
@@ -187,7 +187,7 @@ impl BanditSelector {
             arms,
             total_selections: 0,
             last_selection: None,
-            feature_dim,
+            _feature_dim: feature_dim,
             a_matrices,
             b_vectors,
         }
