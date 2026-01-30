@@ -36,6 +36,78 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Exponential Moving Average tracker for multiple timescales.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultiScaleEMA {
+    fast: f32,
+    medium: f32,
+    slow: f32,
+    count: usize,
+}
+
+impl Default for MultiScaleEMA {
+    fn default() -> Self { Self::new() }
+}
+
+impl MultiScaleEMA {
+    pub fn new() -> Self {
+        Self { fast: 0.0, medium: 0.0, slow: 0.0, count: 0 }
+    }
+    pub fn update(&mut self, value: f32) {
+        self.count += 1;
+        if self.count == 1 {
+            self.fast = value; self.medium = value; self.slow = value;
+        } else {
+            self.fast = 0.75 * self.fast + 0.25 * value;
+            self.medium = 0.9375 * self.medium + 0.0625 * value;
+            self.slow = 0.984375 * self.slow + 0.015625 * value;
+        }
+    }
+    pub fn fast(&self) -> f32 { self.fast }
+    pub fn medium(&self) -> f32 { self.medium }
+    pub fn slow(&self) -> f32 { self.slow }
+    pub fn spread(&self) -> f32 { self.fast - self.slow }
+    pub fn is_warm(&self) -> bool { self.count >= 16 }
+}
+
+/// Running statistics for online feature normalization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunningStats {
+    mean: f64,
+    variance: f64,
+    count: usize,
+}
+
+impl Default for RunningStats {
+    fn default() -> Self { Self::new() }
+}
+
+impl RunningStats {
+    pub fn new() -> Self {
+        Self { mean: 0.0, variance: 0.0, count: 0 }
+    }
+    pub fn update(&mut self, value: f64) {
+        self.count += 1;
+        let delta = value - self.mean;
+        self.mean += delta / self.count as f64;
+        let delta2 = value - self.mean;
+        self.variance += delta * delta2;
+    }
+    pub fn normalize(&self, value: f64) -> f32 {
+        if self.count < 2 { return 0.0; }
+        let std_dev = (self.variance / self.count as f64).sqrt();
+        if std_dev < 1e-8 { return 0.0; }
+        let normalized = (value - self.mean) / std_dev;
+        normalized.clamp(-10.0, 10.0) as f32
+    }
+    pub fn mean(&self) -> f64 { self.mean }
+    pub fn std_dev(&self) -> f64 {
+        if self.count < 2 { return 0.0; }
+        (self.variance / self.count as f64).sqrt()
+    }
+}
+
+
 /// Fixed-size ring buffer for history tracking.
 ///
 /// Provides O(1) insertion and maintains the most recent N values.
@@ -220,7 +292,13 @@ pub struct TrainingState {
     
     /// History of recent loss values.
     pub loss_history: RingBuffer<f32, 256>,
-    
+
+    /// Multi-scale exponential moving averages of loss.
+    pub loss_ema: MultiScaleEMA,
+
+    /// Running statistics for feature normalization.
+    pub feature_normalizer: RunningStats,
+
     /// Current gradient norm.
     pub gradient_norm: f32,
     
@@ -263,6 +341,8 @@ impl TrainingState {
             step: 0,
             loss: f32::NAN,
             loss_history: RingBuffer::new(),
+            loss_ema: MultiScaleEMA::new(),
+            feature_normalizer: RunningStats::new(),
             gradient_norm: f32::NAN,
             gradient_norm_history: RingBuffer::new(),
             weight_checksum: 0,
@@ -285,6 +365,7 @@ impl TrainingState {
         self.loss = loss;
         self.gradient_norm = gradient_norm;
         self.loss_history.push(loss);
+        self.loss_ema.update(loss);
         self.gradient_norm_history.push(gradient_norm);
         self.phase_step += 1;
     }
@@ -388,8 +469,8 @@ impl TrainingState {
             crate::Phase::Correct => 3.0,
         });
         features.push(self.phase_step as f32 / 100.0);
-        // Pad to 32 features
-        while features.len() < 32 {
+        // Pad to 64 features
+        while features.len() < 64 {
             features.push(0.0);
         }
         
@@ -600,5 +681,38 @@ mod tests {
         
         let features = state.compute_features();
         assert!(features.len() >= 32);
+    }
+
+    #[test]
+    fn test_multi_scale_ema() {
+        let mut ema = MultiScaleEMA::new();
+        ema.update(2.0);
+        assert_eq!(ema.fast(), 2.0);
+        for _ in 0..20 { ema.update(1.0); }
+        assert!(ema.is_warm());
+    }
+
+    #[test]
+    fn test_running_stats() {
+        let mut stats = RunningStats::new();
+        for i in 1..=5 { stats.update(i as f64); }
+        assert!((stats.mean() - 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_enhanced_features_64() {
+        let mut state = TrainingState::new();
+        for i in 0..50 { state.record_step(2.0 - i as f32 * 0.01, 1.0); }
+        let features = state.compute_features();
+        assert_eq!(features.len(), 64);
+    }
+
+    #[test]
+    fn test_loss_ema_integration() {
+        let mut state = TrainingState::new();
+        state.record_step(3.0, 1.0);
+        assert_eq!(state.loss_ema.fast(), 3.0);
+        state.record_step(2.0, 1.0);
+        assert!(state.loss_ema.fast() < state.loss_ema.slow());
     }
 }
