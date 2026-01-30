@@ -7,7 +7,7 @@ use rand::Rng;
 /// Implements the standard GRU equations:
 /// - z = `σ(W_z·x` + `U_z·h` + `b_z`)  [update gate]
 /// - r = `σ(W_r·x` + `U_r·h` + `b_r`)  [reset gate]
-/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  [candidate]
+/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  \[`candidate`\]
 /// - `h_new` = (1-z)⊙h + z⊙h̃  [new hidden state]
 pub struct GRUCell {
     /// Input dimension.
@@ -49,7 +49,7 @@ impl GRUCell {
     /// * `input_dim` - Dimension of input features
     /// * `hidden_dim` - Dimension of hidden state
     /// * `learning_rate` - Learning rate for weight updates
-    #[must_use] 
+    #[must_use]
     pub fn new(input_dim: usize, hidden_dim: usize, learning_rate: f32) -> Self {
         let mut rng = rand::rng();
 
@@ -112,12 +112,12 @@ impl GRUCell {
     ///
     /// # Arguments
     ///
-    /// * `input` - Input features at timestep t, shape: [`input_dim`]
-    /// * `hidden` - Hidden state from timestep t-1, shape: [`hidden_dim`]
+    /// * `input` - Input features at timestep t, shape: \[`input_dim`\]
+    /// * `hidden` - Hidden state from timestep t-1, shape: \[`hidden_dim`\]
     ///
     /// # Returns
     ///
-    /// New hidden state at timestep t, shape: [`hidden_dim`]
+    /// New hidden state at timestep t, shape: \[`hidden_dim`\]
     ///
     /// # Implementation
     ///
@@ -126,7 +126,7 @@ impl GRUCell {
     /// 2. Reset gate: r = `σ(W_r·x` + `U_r·h` + `b_r`) - controls how much past to forget
     /// 3. Candidate: h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`) - new candidate state
     /// 4. Output: `h_new` = (1-z)⊙h + z⊙h̃ - interpolate between old and new
-    #[must_use] 
+    #[must_use]
     pub fn step(&self, input: &[f32], hidden: &[f32]) -> Vec<f32> {
         let h_dim = self.hidden_dim;
         let i_dim = self.input_dim;

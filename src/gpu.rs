@@ -1,7 +1,7 @@
-//! GPU acceleration kernels via CubeCL and Burn.
+//! GPU acceleration kernels via `CubeCL` and Burn.
 //!
 //! This module provides GPU-accelerated implementations of performance-critical
-//! operations using CubeCL for custom CUDA kernels and Burn for tensor operations.
+//! operations using `CubeCL` for custom CUDA kernels and Burn for tensor operations.
 //!
 //! # Accelerated Operations
 //!
@@ -13,7 +13,7 @@
 //! # Backend Support
 //!
 //! - CUDA (primary target)
-//! - Future: Metal, Vulkan via CubeCL backends
+//! - Future: Metal, Vulkan via `CubeCL` backends
 //!
 //! # Usage
 //!
@@ -24,8 +24,6 @@
 //! let encoded = accelerator.encode_state(&state)?;
 //! ```
 
-#![cfg(feature = "cuda")]
-
 use crate::error::{HybridResult, HybridTrainingError};
 use crate::state::TrainingState;
 
@@ -33,10 +31,10 @@ use crate::state::TrainingState;
 pub trait GpuBackend: Send + Sync {
     /// Returns the backend name.
     fn name() -> &'static str;
-    
+
     /// Returns whether this backend is available.
     fn is_available() -> bool;
-    
+
     /// Returns device information.
     fn device_info() -> DeviceInfo;
 }
@@ -46,16 +44,16 @@ pub trait GpuBackend: Send + Sync {
 pub struct DeviceInfo {
     /// Device name.
     pub name: String,
-    
+
     /// Total memory in bytes.
     pub total_memory: usize,
-    
+
     /// Available memory in bytes.
     pub available_memory: usize,
-    
+
     /// Compute capability (for CUDA).
     pub compute_capability: Option<(u32, u32)>,
-    
+
     /// Number of streaming multiprocessors.
     pub num_sms: Option<u32>,
 }
@@ -79,13 +77,13 @@ impl GpuBackend for CudaBackend {
     fn name() -> &'static str {
         "CUDA"
     }
-    
+
     fn is_available() -> bool {
         // Check CUDA availability via CubeCL
         // This is a placeholder - actual implementation would use cubecl-cuda
         cfg!(feature = "cuda")
     }
-    
+
     fn device_info() -> DeviceInfo {
         // Query device info via CUDA driver API
         // Placeholder implementation
@@ -100,10 +98,10 @@ impl GpuBackend for CudaBackend {
 pub struct GpuAccelerator<B: GpuBackend> {
     /// Device information.
     device_info: DeviceInfo,
-    
+
     /// Memory pool for temporary allocations.
     memory_pool: MemoryPool,
-    
+
     /// Phantom marker for backend type.
     _backend: std::marker::PhantomData<B>,
 }
@@ -123,22 +121,23 @@ impl<B: GpuBackend> GpuAccelerator<B> {
                 None,
             ));
         }
-        
+
         let device_info = B::device_info();
         let memory_pool = MemoryPool::new(device_info.available_memory / 4);
-        
+
         Ok(Self {
             device_info,
             memory_pool,
             _backend: std::marker::PhantomData,
         })
     }
-    
+
     /// Returns device information.
+    #[must_use]
     pub fn device_info(&self) -> &DeviceInfo {
         &self.device_info
     }
-    
+
     /// Encodes training state to GPU tensor.
     ///
     /// Performs parallel feature extraction on the GPU.
@@ -153,7 +152,7 @@ impl<B: GpuBackend> GpuAccelerator<B> {
             device: B::name().to_string(),
         })
     }
-    
+
     /// Performs batched dynamics prediction on GPU.
     pub fn predict_batch(
         &self,
@@ -166,7 +165,7 @@ impl<B: GpuBackend> GpuAccelerator<B> {
         // 3. Return predicted states
         Ok(Vec::new())
     }
-    
+
     /// Computes low-rank approximation of residuals on GPU.
     pub fn compress_residuals(
         &self,
@@ -183,7 +182,7 @@ impl<B: GpuBackend> GpuAccelerator<B> {
             rank,
         })
     }
-    
+
     /// Applies corrections in parallel on GPU.
     pub fn apply_corrections(
         &self,
@@ -195,14 +194,15 @@ impl<B: GpuBackend> GpuAccelerator<B> {
         // 2. Return corrected predictions
         Ok(GpuTensor::empty())
     }
-    
+
     /// Synchronizes GPU operations (waits for completion).
     pub fn synchronize(&self) -> HybridResult<()> {
         // Placeholder - actual implementation would call cudaDeviceSynchronize
         Ok(())
     }
-    
+
     /// Returns current memory usage.
+    #[must_use]
     pub fn memory_usage(&self) -> MemoryUsage {
         MemoryUsage {
             allocated: self.memory_pool.allocated(),
@@ -217,16 +217,18 @@ impl<B: GpuBackend> GpuAccelerator<B> {
 pub struct GpuTensor {
     /// Data (may be on host for inspection).
     data: Vec<f32>,
-    
+
     /// Tensor shape.
     shape: Vec<usize>,
-    
+
     /// Device identifier.
+    #[allow(dead_code)]
     device: String,
 }
 
 impl GpuTensor {
     /// Creates an empty GPU tensor.
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             data: Vec::new(),
@@ -234,18 +236,21 @@ impl GpuTensor {
             device: "cpu".to_string(),
         }
     }
-    
+
     /// Returns the tensor shape.
+    #[must_use]
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
-    
+
     /// Returns the total number of elements.
+    #[must_use]
     pub fn numel(&self) -> usize {
         self.shape.iter().product()
     }
-    
+
     /// Transfers tensor to host memory.
+    #[must_use]
     pub fn to_host(&self) -> Vec<f32> {
         self.data.clone()
     }
@@ -255,24 +260,28 @@ impl GpuTensor {
 #[derive(Debug, Clone)]
 pub struct CompressedGpuTensor {
     /// Left singular vectors.
+    #[allow(dead_code)]
     u: GpuTensor,
-    
+
     /// Singular values.
+    #[allow(dead_code)]
     s: GpuTensor,
-    
+
     /// Right singular vectors.
+    #[allow(dead_code)]
     v: GpuTensor,
-    
+
     /// Rank of approximation.
     rank: usize,
 }
 
 impl CompressedGpuTensor {
     /// Returns the rank.
+    #[must_use]
     pub fn rank(&self) -> usize {
         self.rank
     }
-    
+
     /// Reconstructs the full tensor.
     pub fn reconstruct(&self) -> HybridResult<GpuTensor> {
         // Placeholder - actual implementation would compute U @ diag(S) @ V^T
@@ -295,15 +304,15 @@ impl MemoryPool {
             peak: 0,
         }
     }
-    
+
     fn allocated(&self) -> usize {
         self.allocated
     }
-    
+
     fn capacity(&self) -> usize {
         self.capacity
     }
-    
+
     fn peak_usage(&self) -> usize {
         self.peak
     }
@@ -314,20 +323,21 @@ impl MemoryPool {
 pub struct MemoryUsage {
     /// Currently allocated bytes.
     pub allocated: usize,
-    
+
     /// Total pool size.
     pub pool_size: usize,
-    
+
     /// Peak usage.
     pub peak_usage: usize,
 }
 
-/// CubeCL kernel definitions.
+/// `CubeCL` kernel definitions.
+///
+/// `CubeCL` kernel implementations.
+///
+/// These kernels are compiled to CUDA/PTX at runtime using `CubeCL`.
 pub mod kernels {
-    //! CubeCL kernel implementations.
-    //!
-    //! These kernels are compiled to CUDA/PTX at runtime using CubeCL.
-    
+
     /// State encoding kernel configuration.
     #[derive(Debug, Clone)]
     pub struct EncodeStateConfig {
@@ -338,7 +348,7 @@ pub mod kernels {
         /// Block size for CUDA kernel.
         pub block_size: usize,
     }
-    
+
     impl Default for EncodeStateConfig {
         fn default() -> Self {
             Self {
@@ -348,7 +358,7 @@ pub mod kernels {
             }
         }
     }
-    
+
     /// GRU forward pass kernel configuration.
     #[derive(Debug, Clone)]
     pub struct GruConfig {
@@ -359,7 +369,7 @@ pub mod kernels {
         /// Batch size.
         pub batch_size: usize,
     }
-    
+
     impl Default for GruConfig {
         fn default() -> Self {
             Self {
@@ -372,22 +382,26 @@ pub mod kernels {
 }
 
 /// Burn tensor operations wrapper.
+///
+/// Burn-based tensor operations for GPU acceleration.
 pub mod burn_ops {
-    //! Burn-based tensor operations for GPU acceleration.
-    
+
     /// Performs matrix multiplication using Burn.
+    #[must_use]
     pub fn matmul(_a: &[f32], _b: &[f32], _m: usize, _k: usize, _n: usize) -> Vec<f32> {
         // Placeholder - actual implementation would use burn::tensor::Tensor
         Vec::new()
     }
-    
+
     /// Performs element-wise operations using Burn.
+    #[must_use]
     pub fn elementwise_add(_a: &[f32], _b: &[f32]) -> Vec<f32> {
         // Placeholder
         Vec::new()
     }
-    
+
     /// Computes softmax using Burn.
+    #[must_use]
     pub fn softmax(_x: &[f32], _dim: usize) -> Vec<f32> {
         // Placeholder
         Vec::new()
@@ -414,7 +428,7 @@ mod tests {
     fn test_kernel_config_defaults() {
         let encode_config = kernels::EncodeStateConfig::default();
         assert_eq!(encode_config.block_size, 256);
-        
+
         let gru_config = kernels::GruConfig::default();
         assert_eq!(gru_config.hidden_dim, 256);
     }

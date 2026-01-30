@@ -104,9 +104,9 @@ use hybrid_predict_trainer_rs::{HybridTrainer, HybridTrainerConfig, Phase};
 // Configure the trainer
 let config = HybridTrainerConfig::builder()
     .warmup_steps(200)
-    .max_predict_length(60)
+    .max_predict_steps(60)
     .confidence_threshold(0.85)
-    .build()?;
+    .build();
 
 // Create trainer with your model and optimizer
 let mut trainer = HybridTrainer::new(model, optimizer, config)?;
@@ -114,13 +114,13 @@ let mut trainer = HybridTrainer::new(model, optimizer, config)?;
 // Training loop
 for batch in data_loader {
     let result = trainer.step(&batch)?;
-    
+
     println!(
-        "Step {} | Phase: {:?} | Loss: {:.4} | Speedup: {:.1}x",
-        result.step,
+        "Step {} | Phase: {:?} | Loss: {:.4} | Predicted: {}",
+        trainer.current_step(),
         result.phase,
         result.loss,
-        result.speedup_factor.unwrap_or(1.0)
+        result.was_predicted
     );
 }
 
@@ -132,31 +132,29 @@ println!("Backward reduction: {:.1}%", stats.backward_reduction_pct);
 ## Configuration
 
 ```rust
-HybridTrainerConfig {
+use hybrid_predict_trainer_rs::config::{
+    HybridTrainerConfig, PredictorConfig, DivergenceConfig, CheckpointConfig
+};
+
+// Using builder pattern
+let config = HybridTrainerConfig::builder()
     // Phase configuration
-    warmup_steps: 200,          // Steps before enabling prediction
-    min_full_steps: 20,         // Minimum steps per full phase
-    max_predict_length: 80,     // Maximum prediction horizon
-    
+    .warmup_steps(200)              // Steps before enabling prediction
+    .full_steps(20)                 // Full training steps per cycle
+    .max_predict_steps(80)          // Maximum prediction horizon
     // Predictor settings
-    predictor_config: PredictorConfig::RSSM {
+    .predictor_config(PredictorConfig::RSSM {
         deterministic_dim: 256,
         stochastic_dim: 32,
         num_categoricals: 32,
         ensemble_size: 3,
-    },
-    
-    // Divergence thresholds
-    divergence_config: DivergenceConfig {
-        loss_sigma_threshold: 3.0,
-        gradient_norm_multiplier: 10.0,
-        vanishing_gradient_threshold: 0.01,
-    },
-    
+    })
     // Confidence and quality
-    confidence_threshold: 0.85,
-    max_loss_gap: 0.02,
-}
+    .confidence_threshold(0.85)
+    .divergence_threshold(3.0)
+    // Metrics collection
+    .collect_metrics(true)
+    .build();
 ```
 
 ## Benchmarks

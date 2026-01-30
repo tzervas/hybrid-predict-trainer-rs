@@ -147,7 +147,8 @@ where
         let avg_grad = gradients.gradient_norm / model.parameter_count() as f32;
         for i in 0..model.parameter_count().min(self.momentum.len()) {
             self.momentum[i] = self.beta1 * self.momentum[i] + (1.0 - self.beta1) * avg_grad;
-            self.variance[i] = self.beta2 * self.variance[i] + (1.0 - self.beta2) * avg_grad * avg_grad;
+            self.variance[i] =
+                self.beta2 * self.variance[i] + (1.0 - self.beta2) * avg_grad * avg_grad;
         }
 
         Ok(())
@@ -173,18 +174,21 @@ fn main() -> HybridResult<()> {
 
     // Build configuration
     let config = HybridTrainerConfig::builder()
-        .warmup_steps(50)        // Shorter warmup for demo
-        .full_steps(10)          // Full training steps per cycle
-        .max_predict_steps(30)   // Max prediction steps
+        .warmup_steps(50) // Shorter warmup for demo
+        .full_steps(10) // Full training steps per cycle
+        .max_predict_steps(30) // Max prediction steps
         .confidence_threshold(0.80) // Lower threshold for demo
-        .collect_metrics(true)    // Enable metrics
+        .collect_metrics(true) // Enable metrics
         .build();
 
     println!("📋 Configuration:");
     println!("   Warmup steps:         {}", config.warmup_steps);
     println!("   Full steps per cycle: {}", config.full_steps);
     println!("   Max predict steps:    {}", config.max_predict_steps);
-    println!("   Confidence threshold: {:.2}", config.confidence_threshold);
+    println!(
+        "   Confidence threshold: {:.2}",
+        config.confidence_threshold
+    );
     println!();
 
     // Validate configuration
@@ -263,7 +267,8 @@ fn main() -> HybridResult<()> {
     let stats = trainer.statistics();
     println!("📈 Training Statistics:");
     println!("   Total steps:        {}", stats.total_steps);
-    println!("   Predicted steps:    {} ({:.1}%)",
+    println!(
+        "   Predicted steps:    {} ({:.1}%)",
         stats.predict_steps,
         stats.predict_steps as f32 / stats.total_steps.max(1) as f32 * 100.0
     );
@@ -271,7 +276,10 @@ fn main() -> HybridResult<()> {
     println!("   Warmup steps:       {}", stats.warmup_steps);
     println!("   Correct steps:      {}", stats.correct_steps);
     println!("   Final loss:         {:.4}", stats.final_loss);
-    println!("   Backward reduction: {:.1}%", stats.backward_reduction_pct);
+    println!(
+        "   Backward reduction: {:.1}%",
+        stats.backward_reduction_pct
+    );
     println!("   Average conf:       {:.2}", stats.avg_confidence);
 
     // Calculate speedup

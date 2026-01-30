@@ -62,7 +62,7 @@ pub enum HybridTrainingError {
         /// The training step where divergence was detected.
         step: u64,
     },
-    
+
     /// Numerical instability detected (NaN, infinity, or extreme values).
     ///
     /// Indicates potential issues with learning rate, gradient scaling,
@@ -74,11 +74,13 @@ pub enum HybridTrainingError {
         /// The training step where instability was detected.
         step: u64,
     },
-    
+
     /// Gradient explosion detected.
     ///
     /// Gradient norms exceeded safe thresholds, risking training divergence.
-    #[error("Gradient explosion at step {step}: norm {norm:.2e} exceeds threshold {threshold:.2e}")]
+    #[error(
+        "Gradient explosion at step {step}: norm {norm:.2e} exceeds threshold {threshold:.2e}"
+    )]
     GradientExplosion {
         /// The observed gradient norm.
         norm: f32,
@@ -87,7 +89,7 @@ pub enum HybridTrainingError {
         /// The training step.
         step: u64,
     },
-    
+
     /// Gradient vanishing detected.
     ///
     /// Gradient norms dropped below minimum thresholds, indicating
@@ -101,7 +103,7 @@ pub enum HybridTrainingError {
         /// The training step.
         step: u64,
     },
-    
+
     /// Predictor model training or inference failed.
     ///
     /// The dynamics predictor encountered an internal error.
@@ -110,21 +112,21 @@ pub enum HybridTrainingError {
         /// Description of the predictor failure.
         reason: String,
     },
-    
+
     /// Configuration error (invalid parameters or incompatible settings).
     #[error("Configuration error: {detail}")]
     ConfigError {
         /// Description of the configuration issue.
         detail: String,
     },
-    
+
     /// Checkpoint save or load failed.
     #[error("Checkpoint error: {reason}")]
     CheckpointError {
         /// Description of the checkpoint failure.
         reason: String,
     },
-    
+
     /// Integration error with external crate.
     #[error("Integration error with {crate_name}: {detail}")]
     IntegrationError {
@@ -133,7 +135,7 @@ pub enum HybridTrainingError {
         /// Description of the integration issue.
         detail: String,
     },
-    
+
     /// Phase transition error (invalid state machine transition).
     #[error("Invalid phase transition from {from:?} to {to:?}: {reason}")]
     InvalidPhaseTransition {
@@ -144,21 +146,21 @@ pub enum HybridTrainingError {
         /// Why the transition is invalid.
         reason: String,
     },
-    
+
     /// State encoding/decoding error.
     #[error("State encoding error: {detail}")]
     StateEncodingError {
         /// Description of the encoding failure.
         detail: String,
     },
-    
+
     /// Memory allocation error.
     #[error("Memory error: {detail}")]
     MemoryError {
         /// Description of the memory issue.
         detail: String,
     },
-    
+
     /// GPU/CUDA error.
     #[cfg(feature = "cuda")]
     #[error("GPU error: {detail}")]
@@ -178,22 +180,22 @@ pub enum RecoveryAction {
     ///
     /// The error was detected but determined to be non-critical.
     Continue,
-    
+
     /// Reduce the ratio of predicted steps to full steps.
     ///
     /// Makes training more conservative by computing more gradients.
     ReducePredictRatio(f32),
-    
+
     /// Force a full training phase for the specified number of steps.
     ///
     /// Temporarily abandons prediction to re-establish stable dynamics.
     ForceFullPhase(usize),
-    
+
     /// Increase the minimum confidence threshold for predictions.
     ///
     /// Requires higher predictor confidence before using predictions.
     IncreaseConfidenceThreshold(f32),
-    
+
     /// Rollback to a checkpoint and retry with adjusted parameters.
     ///
     /// Restores training state from a previous checkpoint and optionally
@@ -204,17 +206,17 @@ pub enum RecoveryAction {
         /// New learning rate to use (if changed).
         new_learning_rate: f32,
     },
-    
+
     /// Skip the current batch and continue.
     ///
     /// Useful for data-related issues that don't indicate systemic problems.
     SkipBatch,
-    
+
     /// Reset the predictor and retrain from scratch.
     ///
     /// Clears predictor state and initiates a new warmup phase.
     ResetPredictor,
-    
+
     /// Abort training (unrecoverable error).
     ///
     /// The error is too severe to continue; training must be stopped.
@@ -230,13 +232,13 @@ impl RecoveryAction {
     /// # Returns
     ///
     /// `true` if training can proceed after this action, `false` if it must stop.
-    #[must_use] 
+    #[must_use]
     pub fn can_continue(&self) -> bool {
         !matches!(self, RecoveryAction::Abort { .. })
     }
-    
+
     /// Returns a human-readable description of the recovery action.
-    #[must_use] 
+    #[must_use]
     pub fn description(&self) -> String {
         match self {
             Self::Continue => "Continue training normally".to_string(),
@@ -249,7 +251,10 @@ impl RecoveryAction {
             Self::IncreaseConfidenceThreshold(thresh) => {
                 format!("Increase confidence threshold to {thresh:.2}")
             }
-            Self::RollbackAndRetry { checkpoint_step, new_learning_rate } => {
+            Self::RollbackAndRetry {
+                checkpoint_step,
+                new_learning_rate,
+            } => {
                 format!(
                     "Rollback to step {checkpoint_step} with learning rate {new_learning_rate:.2e}"
                 )
@@ -269,17 +274,17 @@ impl RecoveryAction {
 pub enum DivergenceLevel {
     /// Training metrics are within normal ranges.
     Normal,
-    
+
     /// Metrics are trending toward unusual values.
     ///
     /// Increased monitoring recommended, but no action required yet.
     Caution,
-    
+
     /// Significant deviation detected.
     ///
     /// Consider falling back to full training or reducing prediction length.
     Warning,
-    
+
     /// Imminent failure detected (NaN, explosion, etc.).
     ///
     /// Immediate intervention required to prevent training failure.
@@ -297,7 +302,7 @@ impl DivergenceLevel {
     /// # Returns
     ///
     /// A suggested recovery action based on severity.
-    #[must_use] 
+    #[must_use]
     pub fn suggested_action(&self, current_step: u64, last_checkpoint: u64) -> RecoveryAction {
         match self {
             Self::Normal => RecoveryAction::Continue,
@@ -329,7 +334,7 @@ pub type HybridResult<T> = Result<T, (HybridTrainingError, Option<RecoveryAction
 pub trait IntoHybridResult<T> {
     /// Converts this result into a `HybridResult` with no recovery action.
     fn into_hybrid(self) -> HybridResult<T>;
-    
+
     /// Converts this result into a `HybridResult` with the specified recovery action.
     fn with_recovery(self, action: RecoveryAction) -> HybridResult<T>;
 }
@@ -338,7 +343,7 @@ impl<T, E: Into<HybridTrainingError>> IntoHybridResult<T> for Result<T, E> {
     fn into_hybrid(self) -> HybridResult<T> {
         self.map_err(|e| (e.into(), None))
     }
-    
+
     fn with_recovery(self, action: RecoveryAction) -> HybridResult<T> {
         self.map_err(|e| (e.into(), Some(action)))
     }
@@ -359,12 +364,21 @@ mod tests {
     fn test_recovery_action_can_continue() {
         assert!(RecoveryAction::Continue.can_continue());
         assert!(RecoveryAction::ForceFullPhase(10).can_continue());
-        assert!(!RecoveryAction::Abort { reason: "test".to_string() }.can_continue());
+        assert!(!RecoveryAction::Abort {
+            reason: "test".to_string()
+        }
+        .can_continue());
     }
 
     #[test]
     fn test_suggested_action_for_critical() {
         let action = DivergenceLevel::Critical.suggested_action(100, 50);
-        matches!(action, RecoveryAction::RollbackAndRetry { checkpoint_step: 50, .. });
+        matches!(
+            action,
+            RecoveryAction::RollbackAndRetry {
+                checkpoint_step: 50,
+                ..
+            }
+        );
     }
 }

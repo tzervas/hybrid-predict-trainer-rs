@@ -55,7 +55,7 @@ pub enum Phase {
     /// observes these steps to learn the initial training dynamics.
     /// No predictions are made during this phase.
     Warmup,
-    
+
     /// Full training phase: compute actual gradients.
     ///
     /// Traditional forward and backward passes are executed. The
@@ -64,14 +64,14 @@ pub enum Phase {
     /// 2. Train the dynamics predictor
     /// 3. Collect residuals for correction
     Full,
-    
+
     /// Predictive phase: use learned dynamics.
     ///
     /// The backward pass is skipped. Instead, the dynamics model
     /// predicts weight updates based on the current state. This
     /// provides significant speedup at the cost of some accuracy.
     Predict,
-    
+
     /// Correction phase: apply residual corrections.
     ///
     /// After prediction, residuals from previous full phases are
@@ -82,7 +82,7 @@ pub enum Phase {
 
 impl Phase {
     /// Returns a human-readable name for the phase.
-    #[must_use] 
+    #[must_use]
     pub fn name(&self) -> &'static str {
         match self {
             Phase::Warmup => "warmup",
@@ -91,15 +91,15 @@ impl Phase {
             Phase::Correct => "correct",
         }
     }
-    
+
     /// Returns whether backward passes are computed in this phase.
-    #[must_use] 
+    #[must_use]
     pub fn computes_backward(&self) -> bool {
         matches!(self, Phase::Warmup | Phase::Full)
     }
-    
+
     /// Returns whether predictions are used in this phase.
-    #[must_use] 
+    #[must_use]
     pub fn uses_predictions(&self) -> bool {
         matches!(self, Phase::Predict)
     }
@@ -116,13 +116,13 @@ pub enum PhaseDecision {
         /// Number of warmup steps to execute.
         steps: usize,
     },
-    
+
     /// Execute full training phase.
     Full {
         /// Number of full steps to execute.
         steps: usize,
     },
-    
+
     /// Execute predictive phase.
     Predict {
         /// Maximum number of prediction steps.
@@ -132,7 +132,7 @@ pub enum PhaseDecision {
         /// Loss threshold at which to abort prediction.
         fallback_threshold: f32,
     },
-    
+
     /// Execute correction phase.
     Correct {
         /// Number of validation samples for correction.
@@ -144,7 +144,7 @@ pub enum PhaseDecision {
 
 impl PhaseDecision {
     /// Returns the phase type for this decision.
-    #[must_use] 
+    #[must_use]
     pub fn phase(&self) -> Phase {
         match self {
             PhaseDecision::Warmup { .. } => Phase::Warmup,
@@ -153,15 +153,17 @@ impl PhaseDecision {
             PhaseDecision::Correct { .. } => Phase::Correct,
         }
     }
-    
+
     /// Returns the number of steps for this phase.
-    #[must_use] 
+    #[must_use]
     pub fn steps(&self) -> usize {
         match self {
             PhaseDecision::Warmup { steps } => *steps,
             PhaseDecision::Full { steps } => *steps,
             PhaseDecision::Predict { steps, .. } => *steps,
-            PhaseDecision::Correct { validation_samples, .. } => *validation_samples,
+            PhaseDecision::Correct {
+                validation_samples, ..
+            } => *validation_samples,
         }
     }
 }
@@ -174,25 +176,25 @@ impl PhaseDecision {
 pub struct PhaseOutcome {
     /// The phase that was executed.
     pub phase: Phase,
-    
+
     /// Number of steps actually executed.
     pub steps_executed: usize,
-    
+
     /// Average loss during the phase.
     pub average_loss: f32,
-    
+
     /// Final loss at end of phase.
     pub final_loss: f32,
-    
+
     /// Whether the phase completed normally.
     pub completed_normally: bool,
-    
+
     /// Early termination reason (if any).
     pub early_termination_reason: Option<String>,
-    
+
     /// Prediction error (for Predict phase only).
     pub prediction_error: Option<f32>,
-    
+
     /// Time taken in milliseconds.
     pub duration_ms: f64,
 }
@@ -212,7 +214,7 @@ pub trait PhaseController: Send + Sync {
     ///
     /// A decision about which phase to execute and for how long.
     fn select_next_phase(&mut self, state: &TrainingState) -> PhaseDecision;
-    
+
     /// Updates the controller with the outcome of a completed phase.
     ///
     /// # Arguments
@@ -220,7 +222,7 @@ pub trait PhaseController: Send + Sync {
     /// * `phase` - The phase that completed
     /// * `outcome` - Statistics about the phase execution
     fn observe_outcome(&mut self, phase: Phase, outcome: &PhaseOutcome);
-    
+
     /// Handles divergence by selecting an appropriate recovery action.
     ///
     /// # Arguments
@@ -231,10 +233,10 @@ pub trait PhaseController: Send + Sync {
     ///
     /// A recovery action to take.
     fn handle_divergence(&mut self, severity: DivergenceLevel) -> RecoveryAction;
-    
+
     /// Returns the current phase.
     fn current_phase(&self) -> Phase;
-    
+
     /// Forces a transition to a specific phase.
     ///
     /// Used for recovery actions or manual intervention.
@@ -248,25 +250,25 @@ pub trait PhaseController: Send + Sync {
 pub struct DefaultPhaseController {
     /// Current phase.
     current_phase: Phase,
-    
+
     /// Configuration parameters.
     config: PhaseControllerConfig,
-    
+
     /// Steps remaining in current phase.
     _steps_remaining: usize,
-    
+
     /// Whether warmup has completed.
     warmup_complete: bool,
-    
+
     /// Current predictor confidence (updated externally).
     predictor_confidence: f32,
-    
+
     /// Count of consecutive prediction phases.
     consecutive_predict_phases: usize,
-    
+
     /// Last checkpoint step for rollback recovery.
     last_checkpoint_step: u64,
-    
+
     /// History of phase outcomes for adaptive decisions.
     outcome_history: Vec<PhaseOutcome>,
 }
@@ -300,7 +302,7 @@ impl From<&HybridTrainerConfig> for PhaseControllerConfig {
 
 impl DefaultPhaseController {
     /// Creates a new phase controller with the given configuration.
-    #[must_use] 
+    #[must_use]
     pub fn new(config: &HybridTrainerConfig) -> Self {
         let ctrl_config = PhaseControllerConfig::from(config);
         Self {
@@ -314,34 +316,34 @@ impl DefaultPhaseController {
             outcome_history: Vec::with_capacity(100),
         }
     }
-    
+
     /// Updates the predictor confidence used for phase decisions.
     pub fn set_predictor_confidence(&mut self, confidence: f32) {
         self.predictor_confidence = confidence;
     }
-    
+
     /// Updates the last checkpoint step for recovery decisions.
     pub fn set_last_checkpoint(&mut self, step: u64) {
         self.last_checkpoint_step = step;
     }
-    
+
     /// Returns whether warmup has completed.
-    #[must_use] 
+    #[must_use]
     pub fn is_warmup_complete(&self) -> bool {
         self.warmup_complete
     }
-    
+
     /// Computes adaptive prediction length based on confidence and history.
     fn compute_predict_steps(&self) -> usize {
         // Scale prediction length by confidence
         let base_steps = self.config.max_predict_steps;
         let confidence_factor = self.predictor_confidence.powf(2.0);
         let adaptive_steps = (base_steps as f32 * confidence_factor) as usize;
-        
+
         // Reduce if we've had many consecutive predictions
         let consecutive_penalty = 1.0 - (self.consecutive_predict_phases as f32 * 0.1).min(0.5);
         let penalized_steps = (adaptive_steps as f32 * consecutive_penalty) as usize;
-        
+
         penalized_steps.max(10).min(self.config.max_predict_steps)
     }
 }
@@ -358,7 +360,7 @@ impl PhaseController for DefaultPhaseController {
             self.warmup_complete = true;
             self.current_phase = Phase::Full;
         }
-        
+
         // After warmup, cycle through Full → Predict → Correct → Full
         match self.current_phase {
             Phase::Warmup => {
@@ -368,7 +370,7 @@ impl PhaseController for DefaultPhaseController {
                     steps: self.config.full_steps,
                 }
             }
-            
+
             Phase::Full | Phase::Correct => {
                 // After Full or Correct, decide between Predict and Full
                 if self.predictor_confidence >= self.config.confidence_threshold
@@ -376,12 +378,11 @@ impl PhaseController for DefaultPhaseController {
                 {
                     self.current_phase = Phase::Predict;
                     self.consecutive_predict_phases += 1;
-                    
+
                     let steps = self.compute_predict_steps();
                     let loss_stats = state.loss_statistics();
-                    let fallback_threshold = loss_stats.mean as f32 
-                        + 3.0 * loss_stats.std as f32;
-                    
+                    let fallback_threshold = loss_stats.mean as f32 + 3.0 * loss_stats.std as f32;
+
                     PhaseDecision::Predict {
                         steps,
                         confidence: self.predictor_confidence,
@@ -395,7 +396,7 @@ impl PhaseController for DefaultPhaseController {
                     }
                 }
             }
-            
+
             Phase::Predict => {
                 // After Predict, go to Correct then Full
                 self.current_phase = Phase::Correct;
@@ -406,37 +407,37 @@ impl PhaseController for DefaultPhaseController {
             }
         }
     }
-    
+
     fn observe_outcome(&mut self, _phase: Phase, outcome: &PhaseOutcome) {
         // Store outcome in history
         self.outcome_history.push(outcome.clone());
         if self.outcome_history.len() > 100 {
             self.outcome_history.remove(0);
         }
-        
+
         // Adjust based on outcome
         if !outcome.completed_normally {
             // Phase failed, be more conservative
             self.consecutive_predict_phases = self.config.max_consecutive_predicts;
         }
     }
-    
+
     fn handle_divergence(&mut self, severity: DivergenceLevel) -> RecoveryAction {
         match severity {
             DivergenceLevel::Normal => RecoveryAction::Continue,
-            
+
             DivergenceLevel::Caution => {
                 // Be more conservative with predictions
                 RecoveryAction::ReducePredictRatio(0.5)
             }
-            
+
             DivergenceLevel::Warning => {
                 // Force full training for a while
                 self.current_phase = Phase::Full;
                 self.consecutive_predict_phases = self.config.max_consecutive_predicts;
                 RecoveryAction::ForceFullPhase(self.config.full_steps * 2)
             }
-            
+
             DivergenceLevel::Critical => {
                 // Rollback if possible
                 RecoveryAction::RollbackAndRetry {
@@ -446,11 +447,11 @@ impl PhaseController for DefaultPhaseController {
             }
         }
     }
-    
+
     fn current_phase(&self) -> Phase {
         self.current_phase
     }
-    
+
     fn force_phase(&mut self, phase: Phase) {
         self.current_phase = phase;
         if phase == Phase::Full {
@@ -474,24 +475,24 @@ pub fn validate_transition(from: Phase, to: Phase) -> HybridResult<()> {
         // Warmup can only go to Full
         (Phase::Warmup, Phase::Full) => true,
         (Phase::Warmup, _) => false,
-        
+
         // Full can go to Predict or stay in Full
         (Phase::Full, Phase::Predict) => true,
         (Phase::Full, Phase::Full) => true,
         (Phase::Full, Phase::Correct) => true, // After forced full
-        
+
         // Predict goes to Correct
         (Phase::Predict, Phase::Correct) => true,
         (Phase::Predict, Phase::Full) => true, // Early termination
-        
+
         // Correct goes to Full or Predict
         (Phase::Correct, Phase::Full) => true,
         (Phase::Correct, Phase::Predict) => true,
-        
+
         // Invalid transitions
         _ => false,
     };
-    
+
     if valid {
         Ok(())
     } else {
@@ -516,7 +517,7 @@ mod tests {
         assert!(Phase::Full.computes_backward());
         assert!(!Phase::Predict.computes_backward());
         assert!(!Phase::Correct.computes_backward());
-        
+
         assert!(Phase::Predict.uses_predictions());
         assert!(!Phase::Full.uses_predictions());
     }
@@ -540,7 +541,7 @@ mod tests {
         let config = HybridTrainerConfig::default();
         let mut controller = DefaultPhaseController::new(&config);
         let state = TrainingState::new();
-        
+
         let decision = controller.select_next_phase(&state);
         assert!(matches!(decision, PhaseDecision::Warmup { .. }));
     }

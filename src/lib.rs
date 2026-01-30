@@ -92,7 +92,14 @@
 //! - [`corrector`] - Prediction correction via residual application
 //! - [`divergence`] - Multi-signal divergence detection
 //! - [`metrics`] - Training metrics collection and reporting
-//! - [`gpu`] - GPU acceleration kernels (requires `cuda` feature)
+#![cfg_attr(
+    feature = "cuda",
+    doc = "- [`gpu`] - GPU acceleration kernels (requires `cuda` feature)"
+)]
+#![cfg_attr(
+    not(feature = "cuda"),
+    doc = "- `gpu` - GPU acceleration kernels (requires `cuda` feature)"
+)]
 //!
 //! ## References
 //!
@@ -129,17 +136,17 @@ pub mod phases;
 pub mod state;
 
 // Training phase implementations
-pub mod warmup;
+pub mod corrector;
 pub mod full_train;
 pub mod predictive;
 pub mod residuals;
-pub mod corrector;
+pub mod warmup;
 
 // Prediction and control
-pub mod gru;
-pub mod dynamics;
-pub mod divergence;
 pub mod bandit;
+pub mod divergence;
+pub mod dynamics;
+pub mod gru;
 
 // Metrics and monitoring
 pub mod metrics;
@@ -151,7 +158,7 @@ pub mod gpu;
 
 // Re-exports for convenient access
 pub use config::HybridTrainerConfig;
-pub use error::{HybridTrainingError, HybridResult, RecoveryAction};
+pub use error::{HybridResult, HybridTrainingError, RecoveryAction};
 pub use phases::{Phase, PhaseController, PhaseDecision, PhaseOutcome};
 pub use state::TrainingState;
 
@@ -312,28 +319,28 @@ where
 pub struct HybridTrainer<M, O> {
     /// The model being trained.
     model: Arc<RwLock<M>>,
-    
+
     /// The optimizer for parameter updates.
     optimizer: Arc<RwLock<O>>,
-    
+
     /// Training configuration.
     config: HybridTrainerConfig,
-    
+
     /// Current training state.
     state: TrainingState,
-    
+
     /// Phase controller for state machine management.
     phase_controller: phases::DefaultPhaseController,
-    
+
     /// Dynamics model for whole-phase prediction.
     dynamics_model: dynamics::RSSMLite,
-    
+
     /// Divergence monitor for stability detection.
     divergence_monitor: divergence::DivergenceMonitor,
-    
+
     /// Residual corrector for prediction adjustment.
     residual_corrector: corrector::ResidualCorrector,
-    
+
     /// Metrics collector for training statistics.
     metrics: metrics::MetricsCollector,
 }
@@ -361,7 +368,7 @@ impl<M, O> HybridTrainer<M, O> {
         let divergence_monitor = divergence::DivergenceMonitor::new(&config);
         let residual_corrector = corrector::ResidualCorrector::new(&config);
         let metrics = metrics::MetricsCollector::new(config.collect_metrics);
-        
+
         Ok(Self {
             model: Arc::new(RwLock::new(model)),
             optimizer: Arc::new(RwLock::new(optimizer)),
@@ -374,44 +381,44 @@ impl<M, O> HybridTrainer<M, O> {
             metrics,
         })
     }
-    
+
     /// Returns the current training step.
     ///
     /// # Returns
     ///
     /// The current step number (0-indexed).
-    #[must_use] 
+    #[must_use]
     pub fn current_step(&self) -> u64 {
         self.state.step
     }
-    
+
     /// Returns the current training phase.
     ///
     /// # Returns
     ///
     /// The current [`Phase`] of training.
-    #[must_use] 
+    #[must_use]
     pub fn current_phase(&self) -> Phase {
         self.phase_controller.current_phase()
     }
-    
+
     /// Returns the current predictor confidence level.
     ///
     /// # Returns
     ///
     /// A confidence score between 0.0 and 1.0 indicating how reliable
     /// the predictor's outputs are estimated to be.
-    #[must_use] 
+    #[must_use]
     pub fn current_confidence(&self) -> f32 {
         self.dynamics_model.prediction_confidence(&self.state)
     }
-    
+
     /// Returns training statistics and metrics.
     ///
     /// # Returns
     ///
-    /// A [`TrainingStatistics`] struct containing aggregate metrics.
-    #[must_use] 
+    /// A [`metrics::TrainingStatistics`] struct containing aggregate metrics.
+    #[must_use]
     pub fn statistics(&self) -> metrics::TrainingStatistics {
         self.metrics.statistics()
     }
@@ -471,21 +478,17 @@ impl<M, O> HybridTrainer<M, O> {
 
         // Execute the appropriate phase
         let (loss, was_predicted, prediction_error) = match phase {
-            Phase::Warmup | Phase::Full => {
-                self.execute_full_step(batch)?
-            }
-            Phase::Predict => {
-                self.execute_predict_step(batch)?
-            }
-            Phase::Correct => {
-                self.execute_correct_step(batch)?
-            }
+            Phase::Warmup | Phase::Full => self.execute_full_step(batch)?,
+            Phase::Predict => self.execute_predict_step(batch)?,
+            Phase::Correct => self.execute_correct_step(batch)?,
         };
 
         // Check for divergence
         let divergence_result = self.divergence_monitor.check(&self.state, prediction_error);
         if divergence_result.level > error::DivergenceLevel::Caution {
-            let recovery = self.phase_controller.handle_divergence(divergence_result.level);
+            let recovery = self
+                .phase_controller
+                .handle_divergence(divergence_result.level);
             if !recovery.can_continue() {
                 return Err((
                     HybridTrainingError::PredictionDivergence {
@@ -505,7 +508,8 @@ impl<M, O> HybridTrainer<M, O> {
         self.state.loss_history.push(loss);
 
         // Update divergence monitor
-        self.divergence_monitor.observe(loss, self.state.gradient_norm);
+        self.divergence_monitor
+            .observe(loss, self.state.gradient_norm);
 
         // Record metrics
         let step_metrics = if self.config.collect_metrics {
@@ -560,11 +564,14 @@ impl<M, O> HybridTrainer<M, O> {
 
         // Update training state with gradient info
         self.state.gradient_norm = grad_info.gradient_norm;
-        self.state.gradient_norm_history.push(grad_info.gradient_norm);
+        self.state
+            .gradient_norm_history
+            .push(grad_info.gradient_norm);
 
         // Train the dynamics model during full steps (not warmup)
         if self.phase_controller.is_warmup_complete() {
-            self.dynamics_model.observe_gradient(&self.state, &grad_info);
+            self.dynamics_model
+                .observe_gradient(&self.state, &grad_info);
         }
 
         Ok((loss, false, None))
@@ -606,7 +613,9 @@ impl<M, O> HybridTrainer<M, O> {
         let mut model = self.model.write();
 
         // Apply residual correction
-        let correction = self.residual_corrector.compute_simple_correction(&self.state);
+        let correction = self
+            .residual_corrector
+            .compute_simple_correction(&self.state);
         if let Some(delta) = correction {
             model.apply_weight_delta(&delta)?;
         }
@@ -639,22 +648,22 @@ impl<M, O> HybridTrainer<M, O> {
 pub struct StepResult {
     /// The loss value for this step.
     pub loss: f32,
-    
+
     /// The phase during which this step was executed.
     pub phase: Phase,
-    
+
     /// Whether this step used predicted gradients (true) or computed gradients (false).
     pub was_predicted: bool,
-    
+
     /// The error between predicted and actual loss (if applicable).
     pub prediction_error: Option<f32>,
-    
+
     /// The predictor's confidence for this step.
     pub confidence: f32,
-    
+
     /// Wall-clock time for this step in milliseconds.
     pub step_time_ms: f64,
-    
+
     /// Detailed metrics (if collection is enabled).
     pub metrics: Option<metrics::StepMetrics>,
 }
@@ -668,19 +677,8 @@ pub struct StepResult {
 /// ```
 pub mod prelude {
     pub use crate::{
-        Batch,
-        GradientInfo,
-        HybridTrainer,
-        HybridTrainerConfig,
-        HybridTrainingError,
-        HybridResult,
-        Model,
-        Optimizer,
-        Phase,
-        PhaseDecision,
-        RecoveryAction,
-        StepResult,
-        TrainingState,
+        Batch, GradientInfo, HybridResult, HybridTrainer, HybridTrainerConfig, HybridTrainingError,
+        Model, Optimizer, Phase, PhaseDecision, RecoveryAction, StepResult, TrainingState,
     };
 }
 

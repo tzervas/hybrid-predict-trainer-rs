@@ -55,20 +55,20 @@ fn sigmoid(x: f32) -> f32 {
 pub struct LatentState {
     /// Deterministic state (GRU hidden state).
     pub deterministic: Vec<f32>,
-    
+
     /// Stochastic state (sampled from categorical).
     pub stochastic: Vec<f32>,
-    
+
     /// Logits for the categorical distribution.
     pub stochastic_logits: Vec<f32>,
-    
+
     /// Combined state (concatenation of deterministic and stochastic).
     pub combined: Vec<f32>,
 }
 
 impl LatentState {
     /// Creates a new latent state with the given dimensions.
-    #[must_use] 
+    #[must_use]
     pub fn new(deterministic_dim: usize, stochastic_dim: usize) -> Self {
         let combined_dim = deterministic_dim + stochastic_dim;
         Self {
@@ -78,7 +78,7 @@ impl LatentState {
             combined: vec![0.0; combined_dim],
         }
     }
-    
+
     /// Updates the combined state from deterministic and stochastic components.
     pub fn update_combined(&mut self) {
         self.combined.clear();
@@ -92,13 +92,13 @@ impl LatentState {
 pub struct PredictionUncertainty {
     /// Aleatoric uncertainty (inherent randomness).
     pub aleatoric: f32,
-    
+
     /// Epistemic uncertainty (model uncertainty).
     pub epistemic: f32,
-    
+
     /// Total uncertainty (combined).
     pub total: f32,
-    
+
     /// Entropy of the stochastic distribution.
     pub entropy: f32,
 }
@@ -119,22 +119,22 @@ impl Default for PredictionUncertainty {
 pub struct RSSMConfig {
     /// Dimension of deterministic state.
     pub deterministic_dim: usize,
-    
+
     /// Dimension of stochastic state.
     pub stochastic_dim: usize,
-    
+
     /// Number of categorical distributions.
     pub num_categoricals: usize,
-    
+
     /// Number of ensemble members.
     pub ensemble_size: usize,
-    
+
     /// Input feature dimension.
     pub input_dim: usize,
-    
+
     /// Hidden dimension for MLPs.
     pub hidden_dim: usize,
-    
+
     /// Learning rate for model updates.
     pub learning_rate: f32,
 }
@@ -177,22 +177,22 @@ impl From<&PredictorConfig> for RSSMConfig {
 pub struct RSSMLite {
     /// Model configuration.
     config: RSSMConfig,
-    
+
     /// Current latent state for each ensemble member.
     latent_states: Vec<LatentState>,
-    
+
     /// GRU weights for each ensemble member.
     gru_weights: Vec<GRUWeights>,
-    
+
     /// Loss prediction head weights.
     loss_head_weights: Vec<f32>,
-    
+
     /// Training step counter.
     training_steps: usize,
-    
+
     /// Historical prediction errors for confidence estimation.
     prediction_errors: Vec<f32>,
-    
+
     /// Temperature for stochastic sampling (reserved for future use).
     #[allow(dead_code)]
     temperature: f32,
@@ -225,13 +225,13 @@ impl GRUWeights {
     fn new(input_dim: usize, hidden_dim: usize) -> Self {
         use rand::Rng;
         let mut rng = rand::rng();
-        
+
         let scale = (2.0 / (input_dim + hidden_dim) as f32).sqrt();
-        
+
         let mut random_vec = |size: usize| -> Vec<f32> {
             (0..size).map(|_| rng.random_range(-scale..scale)).collect()
         };
-        
+
         Self {
             w_z: random_vec(hidden_dim * input_dim),
             w_r: random_vec(hidden_dim * input_dim),
@@ -254,11 +254,11 @@ impl RSSMLite {
     /// Returns an error if initialization fails.
     pub fn new(config: &PredictorConfig) -> HybridResult<Self> {
         let rssm_config = RSSMConfig::from(config);
-        
+
         let latent_states: Vec<_> = (0..rssm_config.ensemble_size)
             .map(|_| LatentState::new(rssm_config.deterministic_dim, rssm_config.stochastic_dim))
             .collect();
-        
+
         let gru_weights: Vec<_> = (0..rssm_config.ensemble_size)
             .map(|_| GRUWeights::new(rssm_config.input_dim, rssm_config.deterministic_dim))
             .collect();
@@ -283,7 +283,7 @@ impl RSSMLite {
             temperature: 1.0,
         })
     }
-    
+
     /// Initializes latent state from training state.
     pub fn initialize_state(&mut self, state: &TrainingState) {
         let features = state.compute_features();
@@ -374,7 +374,7 @@ impl RSSMLite {
         // Use exp to ensure positive loss values
         logit.exp().max(1e-6)
     }
-    
+
     /// Predicts training outcome after Y steps.
     ///
     /// # Arguments
@@ -382,14 +382,14 @@ impl RSSMLite {
     /// * `state` - Current training state
     /// * `y_steps` - Number of steps to predict ahead
     ///
-/// # Errors
-///
-/// Returns an error if the operation fails.
-///
-/// # Returns
+    /// # Errors
+    ///
+    /// Returns an error if the operation fails.
+    ///
+    /// # Returns
     ///
     /// Prediction with uncertainty estimate.
-    #[must_use] 
+    #[must_use]
     pub fn predict_y_steps(
         &self,
         state: &TrainingState,
@@ -417,7 +417,8 @@ impl RSSMLite {
         let features = state.compute_features();
 
         // Collect trajectories from each ensemble member
-        let mut ensemble_trajectories: Vec<Vec<f32>> = Vec::with_capacity(self.config.ensemble_size);
+        let mut ensemble_trajectories: Vec<Vec<f32>> =
+            Vec::with_capacity(self.config.ensemble_size);
 
         for (ensemble_idx, latent) in self.latent_states.iter().enumerate() {
             let weights = &self.gru_weights[ensemble_idx];
@@ -472,7 +473,8 @@ impl RSSMLite {
         let variance: f32 = final_predictions
             .iter()
             .map(|&p| (p - predicted_final_loss).powi(2))
-            .sum::<f32>() / ensemble_size;
+            .sum::<f32>()
+            / ensemble_size;
 
         // Base uncertainty from ensemble disagreement
         let base_std = variance.sqrt();
@@ -493,25 +495,29 @@ impl RSSMLite {
             predicted_final_loss,
             loss_trajectory: mean_trajectory,
             confidence: 1.0 / (1.0 + total_std), // Higher std = lower confidence
-            loss_bounds: (predicted_final_loss - 2.0 * total_std, predicted_final_loss + 2.0 * total_std),
+            loss_bounds: (
+                predicted_final_loss - 2.0 * total_std,
+                predicted_final_loss + 2.0 * total_std,
+            ),
             num_steps: y_steps,
         };
 
         (prediction, uncertainty)
     }
-    
+
     /// Returns the prediction confidence for the current state.
-    #[must_use] 
+    #[must_use]
     pub fn prediction_confidence(&self, state: &TrainingState) -> f32 {
         // Base confidence from ensemble agreement
         let (_, uncertainty) = self.predict_y_steps(state, 10);
         let agreement_confidence = 1.0 / (1.0 + uncertainty.total);
-        
+
         // Historical accuracy confidence
         let historical_confidence = if self.prediction_errors.len() < 10 {
             0.5 // Low confidence until we have enough data
         } else {
-            let recent_errors: Vec<_> = self.prediction_errors
+            let recent_errors: Vec<_> = self
+                .prediction_errors
                 .iter()
                 .rev()
                 .take(50)
@@ -520,11 +526,11 @@ impl RSSMLite {
             let mean_error: f32 = recent_errors.iter().sum::<f32>() / recent_errors.len() as f32;
             (1.0 / (1.0 + mean_error)).min(0.99)
         };
-        
+
         // Combine confidences
         (agreement_confidence * 0.6 + historical_confidence * 0.4).clamp(0.0, 1.0)
     }
-    
+
     /// Updates the model from observed training data.
     ///
     /// # Arguments
@@ -546,30 +552,30 @@ impl RSSMLite {
         let (prediction, _) = self.predict_y_steps(state_before, loss_trajectory.len());
         let actual_final_loss = state_after.loss;
         let error = (prediction.predicted_final_loss - actual_final_loss).abs();
-        
+
         self.prediction_errors.push(error);
         if self.prediction_errors.len() > 1000 {
             self.prediction_errors.remove(0);
         }
-        
+
         // Update model weights using simple gradient descent
         // This is a placeholder - real implementation would use proper backprop
         let learning_rate = self.config.learning_rate;
         let error_signal = prediction.predicted_final_loss - actual_final_loss;
-        
+
         for (i, &combined) in self.latent_states[0].combined.iter().enumerate() {
             if i < self.loss_head_weights.len() {
                 self.loss_head_weights[i] -= learning_rate * error_signal * combined;
             }
         }
-        
+
         self.training_steps += 1;
-        
+
         Ok(())
     }
-    
+
     /// Returns the number of training updates performed.
-    #[must_use] 
+    #[must_use]
     pub fn training_steps(&self) -> usize {
         self.training_steps
     }
@@ -623,7 +629,9 @@ impl RSSMLite {
     pub fn reset(&mut self) {
         for latent in &mut self.latent_states {
             latent.deterministic.fill(0.0);
-            latent.stochastic.fill(1.0 / self.config.stochastic_dim as f32);
+            latent
+                .stochastic
+                .fill(1.0 / self.config.stochastic_dim as f32);
             latent.update_combined();
         }
         self.prediction_errors.clear();
@@ -635,20 +643,20 @@ impl RSSMLite {
 pub trait DynamicsModel: Send + Sync {
     /// The latent state type.
     type LatentState: Clone + Send;
-    
+
     /// Initializes latent state from training state.
     fn initialize(&mut self, state: &TrainingState);
-    
+
     /// Predicts outcome after Y steps.
     fn predict_y_steps(
         &self,
         state: &TrainingState,
         y_steps: usize,
     ) -> (PhasePrediction, PredictionUncertainty);
-    
+
     /// Returns prediction confidence.
     fn prediction_confidence(&self, state: &TrainingState) -> f32;
-    
+
     /// Updates from observation.
     ///
     /// # Errors
@@ -664,11 +672,11 @@ pub trait DynamicsModel: Send + Sync {
 
 impl DynamicsModel for RSSMLite {
     type LatentState = LatentState;
-    
+
     fn initialize(&mut self, state: &TrainingState) {
         self.initialize_state(state);
     }
-    
+
     fn predict_y_steps(
         &self,
         state: &TrainingState,
@@ -676,11 +684,11 @@ impl DynamicsModel for RSSMLite {
     ) -> (PhasePrediction, PredictionUncertainty) {
         RSSMLite::predict_y_steps(self, state, y_steps)
     }
-    
+
     fn prediction_confidence(&self, state: &TrainingState) -> f32 {
         RSSMLite::prediction_confidence(self, state)
     }
-    
+
     fn update_from_observation(
         &mut self,
         state_before: &TrainingState,
@@ -699,7 +707,7 @@ mod tests {
     fn test_rssm_creation() {
         let config = PredictorConfig::default();
         let rssm = RSSMLite::new(&config).unwrap();
-        
+
         assert_eq!(rssm.config.ensemble_size, 3);
         assert_eq!(rssm.latent_states.len(), 3);
     }
@@ -710,7 +718,7 @@ mod tests {
         state.deterministic = vec![1.0, 2.0, 3.0, 4.0];
         state.stochastic = vec![0.5, 0.5];
         state.update_combined();
-        
+
         assert_eq!(state.combined.len(), 6);
         assert_eq!(state.combined[0], 1.0);
         assert_eq!(state.combined[4], 0.5);
@@ -720,14 +728,14 @@ mod tests {
     fn test_prediction() {
         let config = PredictorConfig::default();
         let mut rssm = RSSMLite::new(&config).unwrap();
-        
+
         let mut state = TrainingState::new();
         state.loss = 2.5;
         state.record_step(2.5, 1.0);
-        
+
         rssm.initialize_state(&state);
         let (prediction, uncertainty) = rssm.predict_y_steps(&state, 10);
-        
+
         assert!(prediction.predicted_final_loss > 0.0);
         assert!(prediction.confidence > 0.0 && prediction.confidence <= 1.0);
         assert!(uncertainty.total >= 0.0);
@@ -737,22 +745,26 @@ mod tests {
     fn test_confidence_with_history() {
         let config = PredictorConfig::default();
         let mut rssm = RSSMLite::new(&config).unwrap();
-        
+
         // Initialize with proper state
         let mut state = TrainingState::new();
         state.loss = 2.5;
         state.record_step(2.5, 1.0);
         rssm.initialize_state(&state);
-        
+
         // Add some prediction errors (low errors = high confidence)
         for _ in 0..20 {
             rssm.prediction_errors.push(0.1);
         }
-        
+
         let confidence = rssm.prediction_confidence(&state);
-        
+
         // Should have reasonable confidence with low errors
-        assert!(confidence > 0.5, "confidence={} should be > 0.5", confidence);
+        assert!(
+            confidence > 0.5,
+            "confidence={} should be > 0.5",
+            confidence
+        );
     }
 
     #[test]

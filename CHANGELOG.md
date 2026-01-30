@@ -7,28 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-01-30
+
 ### Added
-- Initial project scaffolding and boilerplate
-- Core trait definitions for hybrid predictive training
-- Phase state machine infrastructure (Warmup, Full, Predict, Correct)
-- Residual extraction and correction framework stubs
-- GPU acceleration support via CubeCL and Burn
-- Comprehensive documentation and development guidelines
+- Complete hybrid predictive training framework with four phases: Warmup, Full, Predict, Correct
+- RSSM-lite dynamics model for training trajectory prediction
+- GRU cell implementation with Xavier initialization
+- Multi-signal divergence detection (loss spikes, gradient explosion, NaN detection)
+- LinUCB bandit for adaptive phase selection
+- Comprehensive metrics collection and JSON export
+- Configuration builder pattern with validation
+- Error types with recovery action suggestions
+- 70+ unit tests and 28 integration tests
+- GitHub Actions CI/CD workflows (ci.yml, security.yml, release.yml)
+- Security policy (SECURITY.md) and dependency audit config (deny.toml)
 
-### Changed
-- N/A
+### Documentation
+- Complete API documentation with examples
+- README with quick start guide
+- CLAUDE.md development context
+- Research documentation in docs/research/
+- Integration guides in docs/integration/
 
-### Deprecated
-- N/A
-
-### Removed
-- N/A
-
-### Fixed
-- N/A
-
-### Security
-- N/A
+### Features
+- `cuda` - GPU acceleration via CubeCL
+- `candle` - Candle tensor integration
+- `async` - Tokio async support
+- `full` - All features enabled
 
 ## [0.0.1] - 2026-01-30
 

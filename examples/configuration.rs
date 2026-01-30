@@ -2,18 +2,16 @@
 //!
 //! Demonstrates different configuration patterns for the hybrid trainer.
 
-use hybrid_predict_trainer_rs::config::{
-    HybridTrainerConfig, PredictorConfig,
-};
+use hybrid_predict_trainer_rs::config::{HybridTrainerConfig, PredictorConfig};
 
 fn main() {
     println!("=== Hybrid Trainer Configuration Examples ===\n");
-    
+
     // Default configuration
     println!("1. Default configuration:");
     let default_config = HybridTrainerConfig::default();
     print_config(&default_config);
-    
+
     // Conservative configuration (safer, less speedup)
     println!("\n2. Conservative configuration:");
     let conservative = HybridTrainerConfig::builder()
@@ -23,7 +21,7 @@ fn main() {
         .confidence_threshold(0.95)
         .build();
     print_config(&conservative);
-    
+
     // Aggressive configuration (more speedup, higher risk)
     println!("\n3. Aggressive configuration:");
     let aggressive = HybridTrainerConfig::builder()
@@ -33,7 +31,7 @@ fn main() {
         .confidence_threshold(0.75)
         .build();
     print_config(&aggressive);
-    
+
     // RSSM predictor configuration
     println!("\n4. RSSM predictor configuration:");
     let rssm_config = HybridTrainerConfig::builder()
@@ -45,7 +43,7 @@ fn main() {
         })
         .build();
     println!("  Predictor: {:?}", rssm_config.predictor_config);
-    
+
     // Custom divergence thresholds
     println!("\n5. Custom divergence thresholds:");
     let custom_divergence = HybridTrainerConfig::builder()

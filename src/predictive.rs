@@ -39,35 +39,35 @@ use crate::Phase;
 pub struct PredictiveStatistics {
     /// Number of prediction steps completed.
     pub steps_completed: usize,
-    
+
     /// Sum of predicted losses.
     pub predicted_loss_sum: f64,
-    
+
     /// Sum of actual losses.
     pub actual_loss_sum: f64,
-    
+
     /// Sum of squared prediction errors.
     pub prediction_error_sq_sum: f64,
-    
+
     /// Maximum prediction error observed.
     pub max_prediction_error: f32,
-    
+
     /// Number of steps where prediction was accurate (within threshold).
     pub accurate_predictions: usize,
-    
+
     /// Number of early terminations due to divergence.
     pub divergence_terminations: usize,
-    
+
     /// Total backward passes avoided.
     pub backward_passes_avoided: usize,
-    
+
     /// Estimated time saved in milliseconds.
     pub estimated_time_saved_ms: f64,
 }
 
 impl PredictiveStatistics {
     /// Returns the mean absolute prediction error.
-    #[must_use] 
+    #[must_use]
     pub fn mean_prediction_error(&self) -> f32 {
         if self.steps_completed == 0 {
             0.0
@@ -76,9 +76,9 @@ impl PredictiveStatistics {
             mse.sqrt() as f32
         }
     }
-    
+
     /// Returns the prediction accuracy rate.
-    #[must_use] 
+    #[must_use]
     pub fn accuracy_rate(&self) -> f32 {
         if self.steps_completed == 0 {
             0.0
@@ -86,27 +86,22 @@ impl PredictiveStatistics {
             self.accurate_predictions as f32 / self.steps_completed as f32
         }
     }
-    
+
     /// Records a prediction step result.
-    pub fn record_step(
-        &mut self,
-        predicted_loss: f32,
-        actual_loss: f32,
-        accuracy_threshold: f32,
-    ) {
+    pub fn record_step(&mut self, predicted_loss: f32, actual_loss: f32, accuracy_threshold: f32) {
         self.steps_completed += 1;
         self.backward_passes_avoided += 1;
-        
+
         self.predicted_loss_sum += f64::from(predicted_loss);
         self.actual_loss_sum += f64::from(actual_loss);
-        
+
         let error = (actual_loss - predicted_loss).abs();
         self.prediction_error_sq_sum += f64::from(error * error);
-        
+
         if error > self.max_prediction_error {
             self.max_prediction_error = error;
         }
-        
+
         if error < accuracy_threshold {
             self.accurate_predictions += 1;
         }
@@ -118,13 +113,13 @@ impl PredictiveStatistics {
 pub struct StepPrediction {
     /// Predicted weight delta.
     pub weight_delta: WeightDelta,
-    
+
     /// Predicted loss after applying delta.
     pub predicted_loss: f32,
-    
+
     /// Confidence in this prediction.
     pub confidence: f32,
-    
+
     /// Uncertainty bounds (low, high) for predicted loss.
     pub loss_bounds: (f32, f32),
 }
@@ -134,19 +129,19 @@ pub struct StepPrediction {
 pub struct PhasePrediction {
     /// Aggregate weight delta for all steps.
     pub weight_delta: WeightDelta,
-    
+
     /// Predicted final loss after phase.
     pub predicted_final_loss: f32,
-    
+
     /// Sparse loss trajectory (key points).
     pub loss_trajectory: Vec<f32>,
-    
+
     /// Overall confidence for the phase prediction.
     pub confidence: f32,
-    
+
     /// Uncertainty bounds for final loss.
     pub loss_bounds: (f32, f32),
-    
+
     /// Number of steps this prediction covers.
     pub num_steps: usize,
 }
@@ -155,28 +150,28 @@ pub struct PhasePrediction {
 pub struct PredictiveExecutor {
     /// Maximum number of prediction steps.
     max_steps: usize,
-    
+
     /// Current step within phase.
     current_step: usize,
-    
+
     /// Collected statistics.
     statistics: PredictiveStatistics,
-    
+
     /// Current confidence level.
     confidence: f32,
-    
+
     /// Confidence threshold for continuing.
     confidence_threshold: f32,
-    
+
     /// Fallback loss threshold for early termination.
     fallback_threshold: f32,
-    
+
     /// Accuracy threshold for "accurate" prediction.
     accuracy_threshold: f32,
-    
+
     /// Start time for duration tracking.
     start_time: Option<std::time::Instant>,
-    
+
     /// Reason for early termination (if any).
     termination_reason: Option<String>,
 }
@@ -190,7 +185,7 @@ impl PredictiveExecutor {
     /// * `confidence` - Initial predictor confidence
     /// * `confidence_threshold` - Minimum confidence to continue
     /// * `fallback_threshold` - Loss threshold for early termination
-    #[must_use] 
+    #[must_use]
     pub fn new(
         max_steps: usize,
         confidence: f32,
@@ -209,9 +204,9 @@ impl PredictiveExecutor {
             termination_reason: None,
         }
     }
-    
+
     /// Creates an executor from configuration.
-    #[must_use] 
+    #[must_use]
     pub fn from_config(config: &HybridTrainerConfig, confidence: f32) -> Self {
         let loss_threshold = 10.0; // Default, should be computed from history
         Self::new(
@@ -221,17 +216,17 @@ impl PredictiveExecutor {
             loss_threshold,
         )
     }
-    
+
     /// Returns whether the phase should terminate.
-    #[must_use] 
+    #[must_use]
     pub fn should_terminate(&self) -> bool {
         self.current_step >= self.max_steps
             || self.confidence < self.confidence_threshold
             || self.termination_reason.is_some()
     }
-    
+
     /// Returns the current progress as a fraction [0, 1].
-    #[must_use] 
+    #[must_use]
     pub fn progress(&self) -> f32 {
         if self.max_steps == 0 {
             1.0
@@ -239,25 +234,25 @@ impl PredictiveExecutor {
             (self.current_step as f32) / (self.max_steps as f32)
         }
     }
-    
+
     /// Returns the number of remaining steps.
-    #[must_use] 
+    #[must_use]
     pub fn steps_remaining(&self) -> usize {
         self.max_steps.saturating_sub(self.current_step)
     }
-    
+
     /// Returns collected statistics.
-    #[must_use] 
+    #[must_use]
     pub fn statistics(&self) -> &PredictiveStatistics {
         &self.statistics
     }
-    
+
     /// Returns the current confidence.
-    #[must_use] 
+    #[must_use]
     pub fn current_confidence(&self) -> f32 {
         self.confidence
     }
-    
+
     /// Records a prediction step result.
     ///
     /// # Arguments
@@ -278,13 +273,14 @@ impl PredictiveExecutor {
         if self.start_time.is_none() {
             self.start_time = Some(std::time::Instant::now());
         }
-        
+
         let relative_threshold = self.accuracy_threshold * actual_loss.abs().max(0.1);
-        self.statistics.record_step(predicted_loss, actual_loss, relative_threshold);
-        
+        self.statistics
+            .record_step(predicted_loss, actual_loss, relative_threshold);
+
         self.confidence = new_confidence;
         self.current_step += 1;
-        
+
         // Check for divergence
         if actual_loss > self.fallback_threshold {
             self.termination_reason = Some(format!(
@@ -292,7 +288,7 @@ impl PredictiveExecutor {
                 actual_loss, self.fallback_threshold
             ));
             self.statistics.divergence_terminations += 1;
-            
+
             return Err((
                 HybridTrainingError::PredictionDivergence {
                     actual: actual_loss,
@@ -303,7 +299,7 @@ impl PredictiveExecutor {
                 Some(RecoveryAction::ForceFullPhase(20)),
             ));
         }
-        
+
         // Check confidence
         if self.confidence < self.confidence_threshold {
             self.termination_reason = Some(format!(
@@ -311,28 +307,30 @@ impl PredictiveExecutor {
                 self.confidence, self.confidence_threshold
             ));
         }
-        
+
         Ok(())
     }
-    
+
     /// Finalizes the phase and returns the outcome.
-    #[must_use] 
+    #[must_use]
     pub fn finalize(self) -> PhaseOutcome {
-        let duration_ms = self.start_time
+        let duration_ms = self
+            .start_time
             .map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
-        
+
         let average_actual = if self.statistics.steps_completed > 0 {
             (self.statistics.actual_loss_sum / self.statistics.steps_completed as f64) as f32
         } else {
             0.0
         };
-        
+
         PhaseOutcome {
             phase: Phase::Predict,
             steps_executed: self.current_step,
             average_loss: average_actual,
             final_loss: average_actual, // Approximate
-            completed_normally: self.termination_reason.is_none() && self.current_step >= self.max_steps,
+            completed_normally: self.termination_reason.is_none()
+                && self.current_step >= self.max_steps,
             early_termination_reason: self.termination_reason,
             prediction_error: Some(self.statistics.mean_prediction_error()),
             duration_ms,
@@ -352,7 +350,7 @@ pub trait PredictivePhase: Send + Sync {
     ///
     /// Prediction for the next step.
     fn predict_step(&self, state: &TrainingState) -> HybridResult<StepPrediction>;
-    
+
     /// Makes a prediction for multiple steps.
     ///
     /// # Arguments
@@ -363,11 +361,15 @@ pub trait PredictivePhase: Send + Sync {
     /// # Returns
     ///
     /// Aggregate prediction for the phase.
-    fn predict_phase(&self, state: &TrainingState, num_steps: usize) -> HybridResult<PhasePrediction>;
-    
+    fn predict_phase(
+        &self,
+        state: &TrainingState,
+        num_steps: usize,
+    ) -> HybridResult<PhasePrediction>;
+
     /// Returns the current prediction confidence.
     fn confidence(&self, state: &TrainingState) -> f32;
-    
+
     /// Updates the predictor from observed training data.
     fn update_from_observation(
         &mut self,
@@ -382,19 +384,19 @@ pub trait PredictivePhase: Send + Sync {
 pub struct PredictiveStepResult {
     /// The prediction that was applied.
     pub prediction: StepPrediction,
-    
+
     /// Actual loss (from forward pass).
     pub actual_loss: f32,
-    
+
     /// Prediction error.
     pub prediction_error: f32,
-    
+
     /// Updated confidence.
     pub new_confidence: f32,
-    
+
     /// Step time in milliseconds.
     pub step_time_ms: f64,
-    
+
     /// Whether to continue or terminate.
     pub should_continue: bool,
 }
@@ -406,11 +408,11 @@ mod tests {
     #[test]
     fn test_statistics_tracking() {
         let mut stats = PredictiveStatistics::default();
-        
+
         stats.record_step(2.5, 2.6, 0.2);
         stats.record_step(2.4, 2.5, 0.2);
         stats.record_step(2.3, 2.4, 0.2);
-        
+
         assert_eq!(stats.steps_completed, 3);
         assert_eq!(stats.backward_passes_avoided, 3);
         assert!(stats.mean_prediction_error() < 0.2);
@@ -419,15 +421,15 @@ mod tests {
     #[test]
     fn test_executor_termination() {
         let mut executor = PredictiveExecutor::new(10, 0.9, 0.85, 5.0);
-        
+
         // Should not terminate initially
         assert!(!executor.should_terminate());
-        
+
         // Record some steps
         for _ in 0..10 {
             let _ = executor.record_step(2.5, 2.6, 0.9);
         }
-        
+
         // Should terminate after max steps
         assert!(executor.should_terminate());
     }
@@ -435,10 +437,10 @@ mod tests {
     #[test]
     fn test_divergence_detection() {
         let mut executor = PredictiveExecutor::new(10, 0.9, 0.85, 3.0);
-        
+
         // Record a step that exceeds fallback threshold
         let result = executor.record_step(2.5, 5.0, 0.9);
-        
+
         assert!(result.is_err());
         assert!(executor.should_terminate());
     }
@@ -446,10 +448,10 @@ mod tests {
     #[test]
     fn test_confidence_termination() {
         let mut executor = PredictiveExecutor::new(10, 0.9, 0.85, 10.0);
-        
+
         // Record step with low confidence
         let _ = executor.record_step(2.5, 2.6, 0.5);
-        
+
         assert!(executor.should_terminate());
     }
 }
