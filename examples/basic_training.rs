@@ -9,7 +9,7 @@
 //! cargo run --example basic_training
 //! ```
 
-use hybrid_predict_trainer_rs::{HybridTrainer, HybridTrainerConfig, Phase};
+use hybrid_predict_trainer_rs::{HybridTrainerConfig, Phase};
 
 fn main() {
     println!("=== Hybrid Predictive Training Example ===\n");
@@ -17,16 +17,15 @@ fn main() {
     // Build configuration
     let config = HybridTrainerConfig::builder()
         .warmup_steps(100)
-        .min_full_steps(20)
-        .max_predict_length(50)
+        .full_steps(20)
+        .max_predict_steps(50)
         .confidence_threshold(0.85)
-        .build()
-        .expect("Failed to build config");
+        .build();
     
     println!("Configuration:");
     println!("  Warmup steps: {}", config.warmup_steps);
-    println!("  Min full steps: {}", config.min_full_steps);
-    println!("  Max predict length: {}", config.max_predict_length);
+    println!("  Full steps: {}", config.full_steps);
+    println!("  Max predict steps: {}", config.max_predict_steps);
     println!("  Confidence threshold: {}", config.confidence_threshold);
     println!();
     

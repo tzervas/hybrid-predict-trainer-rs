@@ -3,7 +3,7 @@
 //! Demonstrates different configuration patterns for the hybrid trainer.
 
 use hybrid_predict_trainer_rs::config::{
-    DivergenceConfig, HybridTrainerConfig, PredictorConfig,
+    HybridTrainerConfig, PredictorConfig,
 };
 
 fn main() {
@@ -18,24 +18,20 @@ fn main() {
     println!("\n2. Conservative configuration:");
     let conservative = HybridTrainerConfig::builder()
         .warmup_steps(500)
-        .min_full_steps(50)
-        .max_predict_length(20)
+        .full_steps(50)
+        .max_predict_steps(20)
         .confidence_threshold(0.95)
-        .max_loss_gap(0.01) // 1% max gap
-        .build()
-        .expect("Failed to build config");
+        .build();
     print_config(&conservative);
     
     // Aggressive configuration (more speedup, higher risk)
     println!("\n3. Aggressive configuration:");
     let aggressive = HybridTrainerConfig::builder()
         .warmup_steps(100)
-        .min_full_steps(10)
-        .max_predict_length(100)
+        .full_steps(10)
+        .max_predict_steps(100)
         .confidence_threshold(0.75)
-        .max_loss_gap(0.05) // 5% max gap
-        .build()
-        .expect("Failed to build config");
+        .build();
     print_config(&aggressive);
     
     // RSSM predictor configuration
@@ -47,35 +43,24 @@ fn main() {
             num_categoricals: 32,
             ensemble_size: 5,
         })
-        .build()
-        .expect("Failed to build config");
+        .build();
     println!("  Predictor: {:?}", rssm_config.predictor_config);
     
     // Custom divergence thresholds
     println!("\n5. Custom divergence thresholds:");
-    let divergence_config = DivergenceConfig {
-        loss_sigma_threshold: 2.0,
-        gradient_norm_multiplier: 5.0,
-        vanishing_gradient_threshold: 0.001,
-    };
     let custom_divergence = HybridTrainerConfig::builder()
-        .divergence_config(divergence_config)
-        .build()
-        .expect("Failed to build config");
+        .divergence_threshold(2.0)
+        .build();
     println!(
-        "  Loss sigma threshold: {}",
-        custom_divergence.divergence_config.loss_sigma_threshold
-    );
-    println!(
-        "  Gradient norm multiplier: {}",
-        custom_divergence.divergence_config.gradient_norm_multiplier
+        "  Divergence threshold: {}",
+        custom_divergence.divergence_threshold
     );
 }
 
 fn print_config(config: &HybridTrainerConfig) {
     println!("  warmup_steps: {}", config.warmup_steps);
-    println!("  min_full_steps: {}", config.min_full_steps);
-    println!("  max_predict_length: {}", config.max_predict_length);
+    println!("  full_steps: {}", config.full_steps);
+    println!("  max_predict_steps: {}", config.max_predict_steps);
     println!("  confidence_threshold: {}", config.confidence_threshold);
-    println!("  max_loss_gap: {}", config.max_loss_gap);
+    println!("  divergence_threshold: {}", config.divergence_threshold);
 }
