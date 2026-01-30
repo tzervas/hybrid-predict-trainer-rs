@@ -5,9 +5,9 @@
 //! enables the trainer to automatically adapt to different training
 //! dynamics without manual tuning.
 //!
-//! # Algorithm: LinUCB
+//! # Algorithm: `LinUCB`
 //!
-//! We use Linear Upper Confidence Bound (LinUCB) which:
+//! We use Linear Upper Confidence Bound (`LinUCB`) which:
 //! - Models reward as a linear function of context features
 //! - Balances exploration (trying different configurations) with
 //!   exploitation (using known good configurations)
@@ -57,6 +57,7 @@ pub struct Arm {
 
 impl Arm {
     /// Creates a new arm with the given id and value.
+    #[must_use] 
     pub fn new(id: usize, name: String, value: f32) -> Self {
         Self {
             id,
@@ -82,6 +83,7 @@ impl Arm {
     }
     
     /// Returns the standard deviation of rewards.
+    #[must_use] 
     pub fn reward_std(&self) -> f64 {
         if self.selection_count < 2 {
             f64::INFINITY
@@ -92,7 +94,8 @@ impl Arm {
     
     /// Computes the UCB score for this arm.
     ///
-    /// UCB = mean_reward + sqrt(2 * ln(total_selections) / arm_selections)
+    /// UCB = `mean_reward` + sqrt(2 * `ln(total_selections)` / `arm_selections`)
+    #[must_use] 
     pub fn ucb_score(&self, total_selections: usize, exploration_factor: f64) -> f64 {
         if self.selection_count == 0 {
             f64::INFINITY // Always explore unselected arms
@@ -117,7 +120,7 @@ pub struct BanditConfig {
     /// Whether to use contextual features.
     pub use_context: bool,
     
-    /// L2 regularization for LinUCB.
+    /// L2 regularization for `LinUCB`.
     pub l2_regularization: f64,
 }
 
@@ -149,15 +152,16 @@ pub struct BanditSelector {
     /// Feature dimension for contextual bandit.
     feature_dim: usize,
     
-    /// LinUCB A matrices (one per arm).
+    /// `LinUCB` A matrices (one per arm).
     a_matrices: Vec<Vec<f64>>,
     
-    /// LinUCB b vectors (one per arm).
+    /// `LinUCB` b vectors (one per arm).
     b_vectors: Vec<Vec<f64>>,
 }
 
 impl BanditSelector {
     /// Creates a new bandit selector with the given arms.
+    #[must_use] 
     pub fn new(arm_values: &[(String, f32)], config: BanditConfig) -> Self {
         let arms: Vec<_> = arm_values
             .iter()
@@ -190,6 +194,7 @@ impl BanditSelector {
     }
     
     /// Creates a selector for prediction phase length selection.
+    #[must_use] 
     pub fn for_predict_length() -> Self {
         let arms = vec![
             ("predict_10".to_string(), 10.0),
@@ -237,8 +242,7 @@ impl BanditSelector {
             .iter()
             .enumerate()
             .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
-            .map(|(idx, _)| idx)
-            .unwrap_or(0);
+            .map_or(0, |(idx, _)| idx);
         
         self.last_selection = Some(best_idx);
         self.total_selections += 1;
@@ -268,20 +272,20 @@ impl BanditSelector {
             // A_a = A_a + x * x^T (diagonal approximation: A_a += x^2)
             for (i, &f) in features.iter().enumerate() {
                 if i < self.a_matrices[arm_idx].len() {
-                    self.a_matrices[arm_idx][i] += (f * f) as f64;
+                    self.a_matrices[arm_idx][i] += f64::from(f * f);
                 }
             }
             
             // b_a = b_a + r * x
             for (i, &f) in features.iter().enumerate() {
                 if i < self.b_vectors[arm_idx].len() {
-                    self.b_vectors[arm_idx][i] += reward * f as f64;
+                    self.b_vectors[arm_idx][i] += reward * f64::from(f);
                 }
             }
         }
     }
     
-    /// Computes LinUCB scores for each arm.
+    /// Computes `LinUCB` scores for each arm.
     fn compute_linucb_scores(&self, features: &[f32]) -> Vec<f64> {
         self.arms
             .iter()
@@ -298,14 +302,14 @@ impl BanditSelector {
                 let exploitation: f64 = theta
                     .iter()
                     .zip(features.iter())
-                    .map(|(&t, &f)| t * f as f64)
+                    .map(|(&t, &f)| t * f64::from(f))
                     .sum();
                 
                 // UCB term: alpha * sqrt(x^T * A^{-1} * x)
                 let variance: f64 = features
                     .iter()
                     .zip(self.a_matrices[idx].iter())
-                    .map(|(&f, &a)| (f as f64).powi(2) / a.max(1e-6))
+                    .map(|(&f, &a)| f64::from(f).powi(2) / a.max(1e-6))
                     .sum();
                 let exploration = self.config.exploration_factor * variance.sqrt();
                 
@@ -315,6 +319,7 @@ impl BanditSelector {
     }
     
     /// Returns the current best arm based on mean reward.
+    #[must_use] 
     pub fn best_arm(&self) -> Option<&Arm> {
         self.arms
             .iter()
@@ -323,6 +328,7 @@ impl BanditSelector {
     }
     
     /// Returns statistics about arm selections.
+    #[must_use] 
     pub fn statistics(&self) -> BanditStatistics {
         let selection_counts: Vec<_> = self.arms.iter().map(|a| a.selection_count).collect();
         let mean_rewards: Vec<_> = self.arms.iter().map(|a| a.mean_reward).collect();
@@ -388,6 +394,7 @@ pub struct BanditStatistics {
 /// # Returns
 ///
 /// Combined reward signal.
+#[must_use] 
 pub fn compute_reward(speedup: f64, loss_gap: f64, stability: f64) -> f64 {
     // Reward components with weights
     let speedup_reward = (speedup - 1.0).max(0.0).min(10.0); // Cap at 10x

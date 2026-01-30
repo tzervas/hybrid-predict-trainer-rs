@@ -67,6 +67,7 @@ pub struct PredictiveStatistics {
 
 impl PredictiveStatistics {
     /// Returns the mean absolute prediction error.
+    #[must_use] 
     pub fn mean_prediction_error(&self) -> f32 {
         if self.steps_completed == 0 {
             0.0
@@ -77,6 +78,7 @@ impl PredictiveStatistics {
     }
     
     /// Returns the prediction accuracy rate.
+    #[must_use] 
     pub fn accuracy_rate(&self) -> f32 {
         if self.steps_completed == 0 {
             0.0
@@ -95,11 +97,11 @@ impl PredictiveStatistics {
         self.steps_completed += 1;
         self.backward_passes_avoided += 1;
         
-        self.predicted_loss_sum += predicted_loss as f64;
-        self.actual_loss_sum += actual_loss as f64;
+        self.predicted_loss_sum += f64::from(predicted_loss);
+        self.actual_loss_sum += f64::from(actual_loss);
         
         let error = (actual_loss - predicted_loss).abs();
-        self.prediction_error_sq_sum += (error * error) as f64;
+        self.prediction_error_sq_sum += f64::from(error * error);
         
         if error > self.max_prediction_error {
             self.max_prediction_error = error;
@@ -188,6 +190,7 @@ impl PredictiveExecutor {
     /// * `confidence` - Initial predictor confidence
     /// * `confidence_threshold` - Minimum confidence to continue
     /// * `fallback_threshold` - Loss threshold for early termination
+    #[must_use] 
     pub fn new(
         max_steps: usize,
         confidence: f32,
@@ -208,6 +211,7 @@ impl PredictiveExecutor {
     }
     
     /// Creates an executor from configuration.
+    #[must_use] 
     pub fn from_config(config: &HybridTrainerConfig, confidence: f32) -> Self {
         let loss_threshold = 10.0; // Default, should be computed from history
         Self::new(
@@ -219,6 +223,7 @@ impl PredictiveExecutor {
     }
     
     /// Returns whether the phase should terminate.
+    #[must_use] 
     pub fn should_terminate(&self) -> bool {
         self.current_step >= self.max_steps
             || self.confidence < self.confidence_threshold
@@ -226,6 +231,7 @@ impl PredictiveExecutor {
     }
     
     /// Returns the current progress as a fraction [0, 1].
+    #[must_use] 
     pub fn progress(&self) -> f32 {
         if self.max_steps == 0 {
             1.0
@@ -235,16 +241,19 @@ impl PredictiveExecutor {
     }
     
     /// Returns the number of remaining steps.
+    #[must_use] 
     pub fn steps_remaining(&self) -> usize {
         self.max_steps.saturating_sub(self.current_step)
     }
     
     /// Returns collected statistics.
+    #[must_use] 
     pub fn statistics(&self) -> &PredictiveStatistics {
         &self.statistics
     }
     
     /// Returns the current confidence.
+    #[must_use] 
     pub fn current_confidence(&self) -> f32 {
         self.confidence
     }
@@ -307,10 +316,10 @@ impl PredictiveExecutor {
     }
     
     /// Finalizes the phase and returns the outcome.
+    #[must_use] 
     pub fn finalize(self) -> PhaseOutcome {
         let duration_ms = self.start_time
-            .map(|t| t.elapsed().as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
+            .map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
         
         let average_actual = if self.statistics.steps_completed > 0 {
             (self.statistics.actual_loss_sum / self.statistics.steps_completed as f64) as f32

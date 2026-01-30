@@ -102,6 +102,7 @@ impl Default for Correction {
 
 impl Correction {
     /// Creates a zero correction (no adjustment).
+    #[must_use] 
     pub fn zero() -> Self {
         Self {
             loss_correction: 0.0,
@@ -113,6 +114,7 @@ impl Correction {
     }
     
     /// Returns whether this correction is significant.
+    #[must_use] 
     pub fn is_significant(&self, threshold: f32) -> bool {
         self.loss_correction.abs() > threshold
     }
@@ -144,6 +146,7 @@ pub struct ResidualCorrector {
 
 impl ResidualCorrector {
     /// Creates a new residual corrector.
+    #[must_use] 
     pub fn new(_config: &HybridTrainerConfig) -> Self {
         let feature_dim = 32; // From TrainingState::compute_features
         Self {
@@ -158,6 +161,7 @@ impl ResidualCorrector {
     }
     
     /// Creates a corrector with custom configuration.
+    #[must_use] 
     pub fn with_config(config: CorrectorConfig) -> Self {
         let feature_dim = 32;
         Self {
@@ -182,6 +186,7 @@ impl ResidualCorrector {
     /// # Returns
     ///
     /// A correction to apply to the prediction.
+    #[must_use] 
     pub fn compute_correction(
         &self,
         state: &TrainingState,
@@ -293,6 +298,7 @@ impl ResidualCorrector {
     }
     
     /// Returns correction statistics.
+    #[must_use] 
     pub fn statistics(&self) -> &CorrectionStatistics {
         &self.statistics
     }
@@ -309,6 +315,7 @@ impl ResidualCorrector {
     /// # Returns
     ///
     /// An optional weight delta to apply, or None if no correction needed.
+    #[must_use] 
     pub fn compute_simple_correction(&self, state: &TrainingState) -> Option<WeightDelta> {
         // Only apply corrections if we have enough history
         if self.statistics.corrections_applied < 10 {
@@ -334,6 +341,7 @@ impl ResidualCorrector {
     }
     
     /// Returns the current residual magnitude EMA.
+    #[must_use] 
     pub fn residual_ema(&self) -> f32 {
         self.residual_ema
     }
@@ -367,6 +375,7 @@ pub struct CorrectionExecutor {
 
 impl CorrectionExecutor {
     /// Creates a new correction executor.
+    #[must_use] 
     pub fn new(validation_samples: usize, max_correction_magnitude: f32) -> Self {
         Self {
             validation_samples,
@@ -378,6 +387,7 @@ impl CorrectionExecutor {
     }
     
     /// Returns whether the correction phase is complete.
+    #[must_use] 
     pub fn is_complete(&self) -> bool {
         self.current_step >= self.validation_samples
     }
@@ -389,9 +399,9 @@ impl CorrectionExecutor {
         }
         
         self.statistics.corrections_applied += 1;
-        self.statistics.total_correction_magnitude += correction.loss_correction.abs() as f64;
+        self.statistics.total_correction_magnitude += f64::from(correction.loss_correction.abs());
         self.statistics.residuals_used += correction.num_residuals_used;
-        self.statistics.prediction_improvement += actual_improvement as f64;
+        self.statistics.prediction_improvement += f64::from(actual_improvement);
         
         if correction.loss_correction.abs() > self.statistics.max_correction_applied {
             self.statistics.max_correction_applied = correction.loss_correction.abs();
@@ -401,10 +411,10 @@ impl CorrectionExecutor {
     }
     
     /// Finalizes the correction phase.
+    #[must_use] 
     pub fn finalize(self) -> PhaseOutcome {
         let duration_ms = self.start_time
-            .map(|t| t.elapsed().as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
+            .map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
         
         PhaseOutcome {
             phase: Phase::Correct,
