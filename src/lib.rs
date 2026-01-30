@@ -143,6 +143,127 @@ pub use state::TrainingState;
 
 use parking_lot::RwLock;
 use std::sync::Arc;
+use std::time::Instant;
+
+/// Batch of training data.
+///
+/// Generic container for a batch of input data that will be fed to the model
+/// during training. The actual batch format depends on the model implementation.
+pub trait Batch: Send + Sync {
+    /// Returns the batch size (number of samples).
+    fn batch_size(&self) -> usize;
+}
+
+/// Gradient information from a backward pass.
+///
+/// Contains the computed gradients and loss for a training step.
+#[derive(Debug, Clone)]
+pub struct GradientInfo {
+    /// The computed loss value.
+    pub loss: f32,
+    /// L2 norm of all gradients.
+    pub gradient_norm: f32,
+    /// Per-parameter gradient norms (optional, for debugging).
+    pub per_param_norms: Option<Vec<f32>>,
+}
+
+/// Trait for models that can be trained with the hybrid trainer.
+///
+/// Models must implement forward pass, backward pass, and parameter access.
+/// The trainer will call these methods during different training phases.
+///
+/// # Type Parameters
+///
+/// - `B`: The batch type containing input data
+///
+/// # Example
+///
+/// ```rust,ignore
+/// impl Model<MyBatch> for MyModel {
+///     fn forward(&mut self, batch: &MyBatch) -> HybridResult<f32> {
+///         // Compute forward pass and return loss
+///     }
+///
+///     fn backward(&mut self) -> HybridResult<GradientInfo> {
+///         // Compute gradients (assumes forward was just called)
+///     }
+///
+///     fn parameter_count(&self) -> usize {
+///         self.parameters.iter().map(|p| p.numel()).sum()
+///     }
+/// }
+/// ```
+pub trait Model<B: Batch>: Send + Sync {
+    /// Executes the forward pass and returns the loss.
+    ///
+    /// # Arguments
+    ///
+    /// * `batch` - The input batch data
+    ///
+    /// # Returns
+    ///
+    /// The loss value for this batch.
+    fn forward(&mut self, batch: &B) -> HybridResult<f32>;
+
+    /// Executes the backward pass (gradient computation).
+    ///
+    /// Should be called after `forward()`. Computes gradients with respect
+    /// to the loss returned by the most recent forward pass.
+    ///
+    /// # Returns
+    ///
+    /// Gradient information including loss and gradient norms.
+    fn backward(&mut self) -> HybridResult<GradientInfo>;
+
+    /// Returns the total number of trainable parameters.
+    fn parameter_count(&self) -> usize;
+
+    /// Applies a weight delta to the model parameters.
+    ///
+    /// Used during predictive phase to apply predicted weight updates.
+    ///
+    /// # Arguments
+    ///
+    /// * `delta` - The weight changes to apply
+    fn apply_weight_delta(&mut self, delta: &state::WeightDelta) -> HybridResult<()>;
+}
+
+/// Trait for optimizers that update model parameters.
+///
+/// Optimizers implement the parameter update rule (SGD, Adam, etc.).
+///
+/// # Example
+///
+/// ```rust,ignore
+/// impl<M: Model<B>, B: Batch> Optimizer<M, B> for AdamOptimizer {
+///     fn step(&mut self, model: &mut M, gradients: &GradientInfo) -> HybridResult<()> {
+///         // Apply Adam update rule to model parameters
+///     }
+/// }
+/// ```
+pub trait Optimizer<M, B: Batch>: Send + Sync
+where
+    M: Model<B>,
+{
+    /// Performs a single optimization step.
+    ///
+    /// Updates model parameters using the computed gradients.
+    ///
+    /// # Arguments
+    ///
+    /// * `model` - The model to update
+    /// * `gradients` - Gradient information from backward pass
+    fn step(&mut self, model: &mut M, gradients: &GradientInfo) -> HybridResult<()>;
+
+    /// Returns the current learning rate.
+    fn learning_rate(&self) -> f32;
+
+    /// Sets the learning rate (for warmup/decay schedules).
+    fn set_learning_rate(&mut self, lr: f32);
+
+    /// Zeros all accumulated gradients.
+    fn zero_grad(&mut self);
+}
 
 /// The main hybrid trainer that orchestrates phase-based predictive training.
 ///

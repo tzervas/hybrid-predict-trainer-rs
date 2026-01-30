@@ -530,14 +530,20 @@ mod tests {
         let config = PredictorConfig::default();
         let mut rssm = RSSMLite::new(&config).unwrap();
         
-        // Add some prediction errors
+        // Initialize with proper state
+        let mut state = TrainingState::new();
+        state.loss = 2.5;
+        state.record_step(2.5, 1.0);
+        rssm.initialize_state(&state);
+        
+        // Add some prediction errors (low errors = high confidence)
         for _ in 0..20 {
             rssm.prediction_errors.push(0.1);
         }
         
-        let state = TrainingState::new();
         let confidence = rssm.prediction_confidence(&state);
         
-        assert!(confidence > 0.5); // Should have reasonable confidence with low errors
+        // Should have reasonable confidence with low errors
+        assert!(confidence > 0.5, "confidence={} should be > 0.5", confidence);
     }
 }
