@@ -356,7 +356,7 @@ pub struct DefaultResidualExtractor {
     compression_rank: usize,
     
     /// Whether to store full residuals (no compression).
-    store_full: bool,
+    _store_full: bool,
 }
 
 impl Default for DefaultResidualExtractor {
@@ -371,7 +371,7 @@ impl DefaultResidualExtractor {
     pub fn new(compression_rank: usize) -> Self {
         Self {
             compression_rank,
-            store_full: false,
+            _store_full: false,
         }
     }
     
@@ -380,7 +380,7 @@ impl DefaultResidualExtractor {
     pub fn full_precision() -> Self {
         Self {
             compression_rank: 0,
-            store_full: true,
+            _store_full: true,
         }
     }
 }
