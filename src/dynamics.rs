@@ -307,8 +307,27 @@ impl RSSMLite {
         state: &TrainingState,
         y_steps: usize,
     ) -> (PhasePrediction, PredictionUncertainty) {
+        // Edge case: zero steps means return current state
+        if y_steps == 0 {
+            let prediction = PhasePrediction {
+                weight_delta: WeightDelta::empty(),
+                predicted_final_loss: state.loss,
+                loss_trajectory: vec![state.loss],
+                confidence: 1.0,
+                loss_bounds: (state.loss, state.loss),
+                num_steps: 0,
+            };
+            let uncertainty = PredictionUncertainty {
+                aleatoric: 0.0,
+                epistemic: 0.0,
+                total: 0.0,
+                entropy: 0.0,
+            };
+            return (prediction, uncertainty);
+        }
+
         let _features = state.compute_features();
-        
+
         // Get predictions from each ensemble member
         let mut predictions: Vec<f32> = Vec::with_capacity(self.config.ensemble_size);
         
@@ -328,6 +347,10 @@ impl RSSMLite {
         }
         
         // Compute ensemble statistics
+        // Safety: if no predictions, fall back to current loss
+        if predictions.is_empty() {
+            predictions.push(state.loss);
+        }
         let mean_pred: f32 = predictions.iter().sum::<f32>() / predictions.len() as f32;
         let variance: f32 = predictions
             .iter()
