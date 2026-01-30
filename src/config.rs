@@ -157,6 +157,7 @@ impl HybridTrainerConfig {
     ///     .confidence_threshold(0.9)
     ///     .build();
     /// ```
+    #[must_use] 
     pub fn builder() -> HybridTrainerConfigBuilder {
         HybridTrainerConfigBuilder::default()
     }
@@ -274,48 +275,56 @@ pub struct HybridTrainerConfigBuilder {
 
 impl HybridTrainerConfigBuilder {
     /// Sets the number of warmup steps.
+    #[must_use] 
     pub fn warmup_steps(mut self, steps: usize) -> Self {
         self.warmup_steps = Some(steps);
         self
     }
     
     /// Sets the number of full training steps per cycle.
+    #[must_use] 
     pub fn full_steps(mut self, steps: usize) -> Self {
         self.full_steps = Some(steps);
         self
     }
     
     /// Sets the maximum prediction steps.
+    #[must_use] 
     pub fn max_predict_steps(mut self, steps: usize) -> Self {
         self.max_predict_steps = Some(steps);
         self
     }
     
     /// Sets the confidence threshold.
+    #[must_use] 
     pub fn confidence_threshold(mut self, threshold: f32) -> Self {
         self.confidence_threshold = Some(threshold);
         self
     }
     
     /// Sets the divergence threshold.
+    #[must_use] 
     pub fn divergence_threshold(mut self, threshold: f32) -> Self {
         self.divergence_threshold = Some(threshold);
         self
     }
     
     /// Sets the predictor configuration.
+    #[must_use] 
     pub fn predictor_config(mut self, config: PredictorConfig) -> Self {
         self.predictor_config = Some(config);
         self
     }
     
     /// Sets the predictor memory budget.
+    #[must_use] 
     pub fn predictor_memory_budget(mut self, budget: usize) -> Self {
         self.predictor_memory_budget = Some(budget);
         self
     }
     
     /// Sets whether to collect metrics.
+    #[must_use] 
     pub fn collect_metrics(mut self, collect: bool) -> Self {
         self.collect_metrics = Some(collect);
         self

@@ -230,11 +230,13 @@ impl RecoveryAction {
     /// # Returns
     ///
     /// `true` if training can proceed after this action, `false` if it must stop.
+    #[must_use] 
     pub fn can_continue(&self) -> bool {
         !matches!(self, RecoveryAction::Abort { .. })
     }
     
     /// Returns a human-readable description of the recovery action.
+    #[must_use] 
     pub fn description(&self) -> String {
         match self {
             Self::Continue => "Continue training normally".to_string(),
@@ -242,20 +244,19 @@ impl RecoveryAction {
                 format!("Reduce prediction ratio to {:.1}%", ratio * 100.0)
             }
             Self::ForceFullPhase(steps) => {
-                format!("Force {} full training steps", steps)
+                format!("Force {steps} full training steps")
             }
             Self::IncreaseConfidenceThreshold(thresh) => {
-                format!("Increase confidence threshold to {:.2}", thresh)
+                format!("Increase confidence threshold to {thresh:.2}")
             }
             Self::RollbackAndRetry { checkpoint_step, new_learning_rate } => {
                 format!(
-                    "Rollback to step {} with learning rate {:.2e}",
-                    checkpoint_step, new_learning_rate
+                    "Rollback to step {checkpoint_step} with learning rate {new_learning_rate:.2e}"
                 )
             }
             Self::SkipBatch => "Skip current batch".to_string(),
             Self::ResetPredictor => "Reset predictor and restart warmup".to_string(),
-            Self::Abort { reason } => format!("Abort training: {}", reason),
+            Self::Abort { reason } => format!("Abort training: {reason}"),
         }
     }
 }
@@ -296,6 +297,7 @@ impl DivergenceLevel {
     /// # Returns
     ///
     /// A suggested recovery action based on severity.
+    #[must_use] 
     pub fn suggested_action(&self, current_step: u64, last_checkpoint: u64) -> RecoveryAction {
         match self {
             Self::Normal => RecoveryAction::Continue,
@@ -323,12 +325,12 @@ impl DivergenceLevel {
 /// action without additional computation.
 pub type HybridResult<T> = Result<T, (HybridTrainingError, Option<RecoveryAction>)>;
 
-/// Extension trait for converting standard Results to HybridResults.
+/// Extension trait for converting standard Results to `HybridResults`.
 pub trait IntoHybridResult<T> {
-    /// Converts this result into a HybridResult with no recovery action.
+    /// Converts this result into a `HybridResult` with no recovery action.
     fn into_hybrid(self) -> HybridResult<T>;
     
-    /// Converts this result into a HybridResult with the specified recovery action.
+    /// Converts this result into a `HybridResult` with the specified recovery action.
     fn with_recovery(self, action: RecoveryAction) -> HybridResult<T>;
 }
 

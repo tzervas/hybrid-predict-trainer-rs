@@ -81,6 +81,7 @@ pub enum Phase {
 
 impl Phase {
     /// Returns a human-readable name for the phase.
+    #[must_use] 
     pub fn name(&self) -> &'static str {
         match self {
             Phase::Warmup => "warmup",
@@ -91,11 +92,13 @@ impl Phase {
     }
     
     /// Returns whether backward passes are computed in this phase.
+    #[must_use] 
     pub fn computes_backward(&self) -> bool {
         matches!(self, Phase::Warmup | Phase::Full)
     }
     
     /// Returns whether predictions are used in this phase.
+    #[must_use] 
     pub fn uses_predictions(&self) -> bool {
         matches!(self, Phase::Predict)
     }
@@ -140,6 +143,7 @@ pub enum PhaseDecision {
 
 impl PhaseDecision {
     /// Returns the phase type for this decision.
+    #[must_use] 
     pub fn phase(&self) -> Phase {
         match self {
             PhaseDecision::Warmup { .. } => Phase::Warmup,
@@ -150,6 +154,7 @@ impl PhaseDecision {
     }
     
     /// Returns the number of steps for this phase.
+    #[must_use] 
     pub fn steps(&self) -> usize {
         match self {
             PhaseDecision::Warmup { steps } => *steps,
@@ -294,6 +299,7 @@ impl From<&HybridTrainerConfig> for PhaseControllerConfig {
 
 impl DefaultPhaseController {
     /// Creates a new phase controller with the given configuration.
+    #[must_use] 
     pub fn new(config: &HybridTrainerConfig) -> Self {
         let ctrl_config = PhaseControllerConfig::from(config);
         Self {
@@ -319,6 +325,7 @@ impl DefaultPhaseController {
     }
     
     /// Returns whether warmup has completed.
+    #[must_use] 
     pub fn is_warmup_complete(&self) -> bool {
         self.warmup_complete
     }
@@ -491,7 +498,7 @@ pub fn validate_transition(from: Phase, to: Phase) -> HybridResult<()> {
             HybridTrainingError::InvalidPhaseTransition {
                 from,
                 to,
-                reason: format!("Transition from {:?} to {:?} is not allowed", from, to),
+                reason: format!("Transition from {from:?} to {to:?} is not allowed"),
             },
             Some(RecoveryAction::ForceFullPhase(10)),
         ))

@@ -70,11 +70,13 @@ pub struct WarmupStatistics {
 
 impl WarmupStatistics {
     /// Returns the loss standard deviation.
+    #[must_use] 
     pub fn loss_std(&self) -> f64 {
         self.loss_variance.sqrt()
     }
     
     /// Returns the gradient norm standard deviation.
+    #[must_use] 
     pub fn gradient_norm_std(&self) -> f64 {
         self.gradient_norm_variance.sqrt()
     }
@@ -87,14 +89,14 @@ impl WarmupStatistics {
         let n = self.steps_completed as f64;
         
         // Update loss statistics
-        let loss_f64 = loss as f64;
+        let loss_f64 = f64::from(loss);
         let delta_loss = loss_f64 - self.loss_mean;
         self.loss_mean += delta_loss / n;
         let delta_loss2 = loss_f64 - self.loss_mean;
         self.loss_variance += delta_loss * delta_loss2;
         
         // Update gradient norm statistics
-        let grad_f64 = gradient_norm as f64;
+        let grad_f64 = f64::from(gradient_norm);
         let delta_grad = grad_f64 - self.gradient_norm_mean;
         self.gradient_norm_mean += delta_grad / n;
         let delta_grad2 = grad_f64 - self.gradient_norm_mean;
@@ -149,6 +151,7 @@ impl WarmupExecutor {
     /// # Arguments
     ///
     /// * `config` - The hybrid trainer configuration
+    #[must_use] 
     pub fn new(config: &HybridTrainerConfig) -> Self {
         Self {
             target_steps: config.warmup_steps,
@@ -159,11 +162,13 @@ impl WarmupExecutor {
     }
     
     /// Returns whether warmup is complete.
+    #[must_use] 
     pub fn is_complete(&self) -> bool {
         self.current_step >= self.target_steps
     }
     
     /// Returns the current warmup progress as a fraction [0, 1].
+    #[must_use] 
     pub fn progress(&self) -> f32 {
         if self.target_steps == 0 {
             1.0
@@ -173,11 +178,13 @@ impl WarmupExecutor {
     }
     
     /// Returns the number of remaining warmup steps.
+    #[must_use] 
     pub fn steps_remaining(&self) -> usize {
         self.target_steps.saturating_sub(self.current_step)
     }
     
     /// Returns a reference to the collected statistics.
+    #[must_use] 
     pub fn statistics(&self) -> &WarmupStatistics {
         &self.statistics
     }
@@ -208,12 +215,12 @@ impl WarmupExecutor {
     /// # Returns
     ///
     /// A `PhaseOutcome` summarizing the warmup phase.
+    #[must_use] 
     pub fn finalize(mut self) -> PhaseOutcome {
         self.statistics.finalize();
         
         let duration_ms = self.start_time
-            .map(|t| t.elapsed().as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
+            .map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
         self.statistics.total_duration_ms = duration_ms;
         
         PhaseOutcome {

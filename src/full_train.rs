@@ -63,6 +63,7 @@ pub struct FullTrainStatistics {
 
 impl FullTrainStatistics {
     /// Creates new statistics tracker.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             min_loss: f32::INFINITY,
@@ -72,6 +73,7 @@ impl FullTrainStatistics {
     }
     
     /// Returns the average loss.
+    #[must_use] 
     pub fn average_loss(&self) -> f32 {
         if self.steps_completed == 0 {
             0.0
@@ -81,6 +83,7 @@ impl FullTrainStatistics {
     }
     
     /// Returns the loss standard deviation.
+    #[must_use] 
     pub fn loss_std(&self) -> f32 {
         if self.steps_completed < 2 {
             0.0
@@ -93,6 +96,7 @@ impl FullTrainStatistics {
     }
     
     /// Returns the average gradient norm.
+    #[must_use] 
     pub fn average_gradient_norm(&self) -> f32 {
         if self.steps_completed == 0 {
             0.0
@@ -105,11 +109,11 @@ impl FullTrainStatistics {
     pub fn record_step(&mut self, loss: f32, gradient_norm: f32, was_clipped: bool) {
         self.steps_completed += 1;
         
-        let loss_f64 = loss as f64;
+        let loss_f64 = f64::from(loss);
         self.loss_sum += loss_f64;
         self.loss_sq_sum += loss_f64 * loss_f64;
         
-        let grad_f64 = gradient_norm as f64;
+        let grad_f64 = f64::from(gradient_norm);
         self.gradient_norm_sum += grad_f64;
         self.gradient_norm_sq_sum += grad_f64 * grad_f64;
         
@@ -185,6 +189,7 @@ impl FullTrainExecutor {
     ///
     /// * `config` - The hybrid trainer configuration
     /// * `steps` - Number of steps for this phase
+    #[must_use] 
     pub fn new(_config: &HybridTrainerConfig, steps: usize) -> Self {
         Self {
             target_steps: steps,
@@ -197,17 +202,20 @@ impl FullTrainExecutor {
     }
     
     /// Creates an executor with custom gradient clipping threshold.
+    #[must_use] 
     pub fn with_max_grad_norm(mut self, max_norm: f32) -> Self {
         self.max_grad_norm = max_norm;
         self
     }
     
     /// Returns whether the phase is complete.
+    #[must_use] 
     pub fn is_complete(&self) -> bool {
         self.current_step >= self.target_steps
     }
     
     /// Returns the current progress as a fraction [0, 1].
+    #[must_use] 
     pub fn progress(&self) -> f32 {
         if self.target_steps == 0 {
             1.0
@@ -217,16 +225,19 @@ impl FullTrainExecutor {
     }
     
     /// Returns the number of remaining steps.
+    #[must_use] 
     pub fn steps_remaining(&self) -> usize {
         self.target_steps.saturating_sub(self.current_step)
     }
     
     /// Returns a reference to collected statistics.
+    #[must_use] 
     pub fn statistics(&self) -> &FullTrainStatistics {
         &self.statistics
     }
     
     /// Returns gradient observations for predictor training.
+    #[must_use] 
     pub fn gradient_observations(&self) -> &[GradientObservation] {
         &self.gradient_observations
     }
@@ -259,10 +270,10 @@ impl FullTrainExecutor {
     }
     
     /// Finalizes the phase and returns the outcome.
+    #[must_use] 
     pub fn finalize(mut self) -> PhaseOutcome {
         let duration_ms = self.start_time
-            .map(|t| t.elapsed().as_secs_f64() * 1000.0)
-            .unwrap_or(0.0);
+            .map_or(0.0, |t| t.elapsed().as_secs_f64() * 1000.0);
         self.statistics.total_duration_ms = duration_ms;
         
         PhaseOutcome {

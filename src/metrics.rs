@@ -219,6 +219,7 @@ pub struct MetricsCollector {
 
 impl MetricsCollector {
     /// Creates a new metrics collector.
+    #[must_use] 
     pub fn new(enabled: bool) -> Self {
         Self {
             enabled,
@@ -261,7 +262,7 @@ impl MetricsCollector {
 
     /// Records metrics for a training step from individual values.
     ///
-    /// Convenience method that creates a StepMetrics and records it.
+    /// Convenience method that creates a `StepMetrics` and records it.
     ///
     /// # Arguments
     ///
@@ -274,7 +275,7 @@ impl MetricsCollector {
     ///
     /// # Returns
     ///
-    /// The created StepMetrics struct.
+    /// The created `StepMetrics` struct.
     pub fn record_step_data(
         &mut self,
         step: u64,
@@ -382,6 +383,7 @@ impl MetricsCollector {
     }
     
     /// Returns the current statistics.
+    #[must_use] 
     pub fn statistics(&self) -> TrainingStatistics {
         self.statistics.clone()
     }
@@ -397,6 +399,7 @@ impl MetricsCollector {
     }
     
     /// Returns a console-friendly summary.
+    #[must_use] 
     pub fn summary(&self) -> String {
         let stats = &self.statistics;
         format!(

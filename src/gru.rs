@@ -5,10 +5,10 @@ use rand::Rng;
 /// GRU cell with forward pass and training capabilities.
 ///
 /// Implements the standard GRU equations:
-/// - z = σ(W_z·x + U_z·h + b_z)  [update gate]
-/// - r = σ(W_r·x + U_r·h + b_r)  [reset gate]
-/// - h̃ = tanh(W_h·x + U_h·(r⊙h) + b_h)  [candidate]
-/// - h_new = (1-z)⊙h + z⊙h̃  [new hidden state]
+/// - z = `σ(W_z·x` + `U_z·h` + `b_z`)  [update gate]
+/// - r = `σ(W_r·x` + `U_r·h` + `b_r`)  [reset gate]
+/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  [candidate]
+/// - `h_new` = (1-z)⊙h + z⊙h̃  [new hidden state]
 pub struct GRUCell {
     /// Input dimension.
     pub input_dim: usize,
@@ -42,13 +42,14 @@ impl GRUCell {
     /// Creates a new GRU cell with Xavier/Glorot initialization.
     ///
     /// Xavier initialization helps prevent vanishing/exploding gradients by
-    /// initializing weights from U(-√(6/(fan_in + fan_out)), √(6/(fan_in + fan_out))).
+    /// initializing weights from U(-√(6/(fan_in + `fan_out`)), √(`6/(fan_in` + `fan_out`))).
     ///
     /// # Arguments
     ///
     /// * `input_dim` - Dimension of input features
     /// * `hidden_dim` - Dimension of hidden state
     /// * `learning_rate` - Learning rate for weight updates
+    #[must_use] 
     pub fn new(input_dim: usize, hidden_dim: usize, learning_rate: f32) -> Self {
         let mut rng = rand::rng();
 
@@ -98,7 +99,7 @@ impl GRUCell {
 
     /// Matrix-vector multiplication for row-major matrices.
     ///
-    /// Computes y = Wx where W is [out_dim, in_dim] stored row-major.
+    /// Computes y = Wx where W is [`out_dim`, `in_dim`] stored row-major.
     fn matmul_vec(matrix: &[f32], vec: &[f32], out: &mut [f32], out_dim: usize, in_dim: usize) {
         for i in 0..out_dim {
             let row_start = i * in_dim;
@@ -107,24 +108,25 @@ impl GRUCell {
         }
     }
 
-    /// Performs a single GRU forward step: h_t = GRU(x_t, h_{t-1}).
+    /// Performs a single GRU forward step: `h_t` = `GRU(x_t`, h_{t-1}).
     ///
     /// # Arguments
     ///
-    /// * `input` - Input features at timestep t, shape: [input_dim]
-    /// * `hidden` - Hidden state from timestep t-1, shape: [hidden_dim]
+    /// * `input` - Input features at timestep t, shape: [`input_dim`]
+    /// * `hidden` - Hidden state from timestep t-1, shape: [`hidden_dim`]
     ///
     /// # Returns
     ///
-    /// New hidden state at timestep t, shape: [hidden_dim]
+    /// New hidden state at timestep t, shape: [`hidden_dim`]
     ///
     /// # Implementation
     ///
     /// Computes the GRU equations:
-    /// 1. Update gate: z = σ(W_z·x + U_z·h + b_z) - controls how much to update
-    /// 2. Reset gate: r = σ(W_r·x + U_r·h + b_r) - controls how much past to forget
-    /// 3. Candidate: h̃ = tanh(W_h·x + U_h·(r⊙h) + b_h) - new candidate state
-    /// 4. Output: h_new = (1-z)⊙h + z⊙h̃ - interpolate between old and new
+    /// 1. Update gate: z = `σ(W_z·x` + `U_z·h` + `b_z`) - controls how much to update
+    /// 2. Reset gate: r = `σ(W_r·x` + `U_r·h` + `b_r`) - controls how much past to forget
+    /// 3. Candidate: h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`) - new candidate state
+    /// 4. Output: `h_new` = (1-z)⊙h + z⊙h̃ - interpolate between old and new
+    #[must_use] 
     pub fn step(&self, input: &[f32], hidden: &[f32]) -> Vec<f32> {
         let h_dim = self.hidden_dim;
         let i_dim = self.input_dim;

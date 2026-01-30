@@ -65,7 +65,7 @@
 //!
 //! ## Features
 //!
-//! - **GPU Acceleration** - CubeCL and Burn backends for high-performance compute
+//! - **GPU Acceleration** - `CubeCL` and Burn backends for high-performance compute
 //! - **Adaptive Phase Selection** - Bandit-based algorithm for optimal phase lengths
 //! - **Divergence Detection** - Multi-signal monitoring prevents training instability
 //! - **Residual Correction** - Online learning corrects prediction errors
@@ -74,7 +74,7 @@
 //! ## Feature Flags
 //!
 //! - `std` - Enable standard library support (default)
-//! - `cuda` - Enable CUDA GPU acceleration via CubeCL
+//! - `cuda` - Enable CUDA GPU acceleration via `CubeCL`
 //! - `candle` - Enable Candle tensor operations for model compatibility
 //! - `async` - Enable async/await support with Tokio
 //! - `full` - Enable all features
@@ -100,9 +100,9 @@
 //! `predictive-training-research.md`, synthesizing insights from:
 //!
 //! - Neural Tangent Kernel (NTK) theory for training dynamics
-//! - RSSM world models from DreamerV3
+//! - RSSM world models from `DreamerV3`
 //! - K-FAC for structured gradient approximation
-//! - PowerSGD for low-rank gradient compression
+//! - `PowerSGD` for low-rank gradient compression
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![warn(missing_docs)]
@@ -367,6 +367,7 @@ impl<M, O> HybridTrainer<M, O> {
     /// # Returns
     ///
     /// The current step number (0-indexed).
+    #[must_use] 
     pub fn current_step(&self) -> u64 {
         self.state.step
     }
@@ -376,6 +377,7 @@ impl<M, O> HybridTrainer<M, O> {
     /// # Returns
     ///
     /// The current [`Phase`] of training.
+    #[must_use] 
     pub fn current_phase(&self) -> Phase {
         self.phase_controller.current_phase()
     }
@@ -386,6 +388,7 @@ impl<M, O> HybridTrainer<M, O> {
     ///
     /// A confidence score between 0.0 and 1.0 indicating how reliable
     /// the predictor's outputs are estimated to be.
+    #[must_use] 
     pub fn current_confidence(&self) -> f32 {
         self.dynamics_model.prediction_confidence(&self.state)
     }
@@ -395,6 +398,7 @@ impl<M, O> HybridTrainer<M, O> {
     /// # Returns
     ///
     /// A [`TrainingStatistics`] struct containing aggregate metrics.
+    #[must_use] 
     pub fn statistics(&self) -> metrics::TrainingStatistics {
         self.metrics.statistics()
     }

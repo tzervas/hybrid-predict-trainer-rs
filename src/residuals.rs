@@ -20,7 +20,7 @@
 //! # Compression
 //!
 //! Gradient residuals can be compressed using low-rank approximation
-//! (similar to PowerSGD) to reduce memory footprint while preserving
+//! (similar to `PowerSGD`) to reduce memory footprint while preserving
 //! the most important correction information.
 
 use serde::{Deserialize, Serialize};
@@ -93,6 +93,7 @@ pub struct CompressedResidual {
 
 impl CompressedResidual {
     /// Creates a new compressed residual from factors.
+    #[must_use] 
     pub fn new(
         left: Vec<f32>,
         right: Vec<f32>,
@@ -117,6 +118,7 @@ impl CompressedResidual {
     /// Reconstructs the full residual tensor.
     ///
     /// Returns a vector in row-major order.
+    #[must_use] 
     pub fn reconstruct(&self) -> Vec<f32> {
         let (rows, cols) = self.original_shape;
         let mut result = vec![0.0; rows * cols];
@@ -136,6 +138,7 @@ impl CompressedResidual {
     }
     
     /// Returns the memory size in bytes.
+    #[must_use] 
     pub fn memory_size(&self) -> usize {
         (self.left_factor.len() + self.right_factor.len() + self.singular_values.len())
             * std::mem::size_of::<f32>()
@@ -187,6 +190,7 @@ impl Default for ResidualStore {
 
 impl ResidualStore {
     /// Creates a new residual store with the specified capacity.
+    #[must_use] 
     pub fn new(max_memory_residuals: usize) -> Self {
         Self {
             memory_store: VecDeque::with_capacity(max_memory_residuals),
@@ -209,6 +213,7 @@ impl ResidualStore {
     }
     
     /// Returns the most recent residuals.
+    #[must_use] 
     pub fn recent(&self, n: usize) -> Vec<&Residual> {
         self.memory_store.iter().rev().take(n).collect()
     }
@@ -219,16 +224,19 @@ impl ResidualStore {
     }
     
     /// Returns the number of stored residuals.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.memory_store.len()
     }
     
     /// Returns whether the store is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.memory_store.is_empty()
     }
     
     /// Returns residual statistics.
+    #[must_use] 
     pub fn statistics(&self) -> &ResidualStatistics {
         &self.statistics
     }
@@ -243,6 +251,7 @@ impl ResidualStore {
     /// # Returns
     ///
     /// Residuals ordered by similarity (most similar first).
+    #[must_use] 
     pub fn find_similar(&self, state: &TrainingState, n: usize) -> Vec<&Residual> {
         let current_features = state.compute_features();
         
@@ -270,12 +279,12 @@ impl ResidualStore {
         let n1 = n + 1.0;
         
         // Update mean loss residual
-        let loss_abs = residual.loss_residual.abs() as f64;
+        let loss_abs = f64::from(residual.loss_residual.abs());
         self.statistics.mean_loss_residual = 
             (self.statistics.mean_loss_residual * n + loss_abs) / n1;
         
         // Update mean confidence
-        let conf = residual.prediction_confidence as f64;
+        let conf = f64::from(residual.prediction_confidence);
         self.statistics.mean_confidence = 
             (self.statistics.mean_confidence * n + conf) / n1;
         
@@ -283,7 +292,7 @@ impl ResidualStore {
         if !residual.gradient_residuals.is_empty() {
             let grad_mag: f64 = residual.gradient_residuals
                 .iter()
-                .map(|g| g.magnitude as f64)
+                .map(|g| f64::from(g.magnitude))
                 .sum::<f64>() / residual.gradient_residuals.len() as f64;
             self.statistics.mean_gradient_residual = 
                 (self.statistics.mean_gradient_residual * n + grad_mag) / n1;
@@ -358,6 +367,7 @@ impl Default for DefaultResidualExtractor {
 
 impl DefaultResidualExtractor {
     /// Creates a new extractor with the specified compression rank.
+    #[must_use] 
     pub fn new(compression_rank: usize) -> Self {
         Self {
             compression_rank,
@@ -366,6 +376,7 @@ impl DefaultResidualExtractor {
     }
     
     /// Creates an extractor that stores full (uncompressed) residuals.
+    #[must_use] 
     pub fn full_precision() -> Self {
         Self {
             compression_rank: 0,

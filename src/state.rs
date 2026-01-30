@@ -50,6 +50,7 @@ impl Default for MultiScaleEMA {
 }
 
 impl MultiScaleEMA {
+    #[must_use] 
     pub fn new() -> Self {
         Self { fast: 0.0, medium: 0.0, slow: 0.0, count: 0 }
     }
@@ -63,10 +64,15 @@ impl MultiScaleEMA {
             self.slow = 0.984375 * self.slow + 0.015625 * value;
         }
     }
+    #[must_use] 
     pub fn fast(&self) -> f32 { self.fast }
+    #[must_use] 
     pub fn medium(&self) -> f32 { self.medium }
+    #[must_use] 
     pub fn slow(&self) -> f32 { self.slow }
+    #[must_use] 
     pub fn spread(&self) -> f32 { self.fast - self.slow }
+    #[must_use] 
     pub fn is_warm(&self) -> bool { self.count >= 16 }
 }
 
@@ -83,6 +89,7 @@ impl Default for RunningStats {
 }
 
 impl RunningStats {
+    #[must_use] 
     pub fn new() -> Self {
         Self { mean: 0.0, variance: 0.0, count: 0 }
     }
@@ -93,6 +100,7 @@ impl RunningStats {
         let delta2 = value - self.mean;
         self.variance += delta * delta2;
     }
+    #[must_use] 
     pub fn normalize(&self, value: f64) -> f32 {
         if self.count < 2 { return 0.0; }
         let std_dev = (self.variance / self.count as f64).sqrt();
@@ -100,7 +108,9 @@ impl RunningStats {
         let normalized = (value - self.mean) / std_dev;
         normalized.clamp(-10.0, 10.0) as f32
     }
+    #[must_use] 
     pub fn mean(&self) -> f64 { self.mean }
+    #[must_use] 
     pub fn std_dev(&self) -> f64 {
         if self.count < 2 { return 0.0; }
         (self.variance / self.count as f64).sqrt()
@@ -127,6 +137,7 @@ impl<T: Clone + Default, const N: usize> Default for RingBuffer<T, N> {
 
 impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
     /// Creates a new empty ring buffer.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             buffer: vec![T::default(); N],
@@ -145,11 +156,13 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
     }
     
     /// Returns the number of values in the buffer.
+    #[must_use] 
     pub fn len(&self) -> usize {
         self.len
     }
     
     /// Returns whether the buffer is empty.
+    #[must_use] 
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -174,6 +187,7 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
     }
     
     /// Returns the most recent value, if any.
+    #[must_use] 
     pub fn last(&self) -> Option<&T> {
         if self.len == 0 {
             None
@@ -197,8 +211,8 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
         let mean = values.iter().sum::<f64>() / n;
         let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
         let std = variance.sqrt();
-        let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+        let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
         
         BufferStatistics { mean, std, min, max }
     }
@@ -336,6 +350,7 @@ impl Default for TrainingState {
 
 impl TrainingState {
     /// Creates a new training state at step 0.
+    #[must_use] 
     pub fn new() -> Self {
         Self {
             step: 0,
@@ -381,11 +396,13 @@ impl TrainingState {
     }
     
     /// Returns statistics about recent loss values.
+    #[must_use] 
     pub fn loss_statistics(&self) -> BufferStatistics {
         self.loss_history.statistics()
     }
     
     /// Returns statistics about recent gradient norms.
+    #[must_use] 
     pub fn gradient_statistics(&self) -> BufferStatistics {
         self.gradient_norm_history.statistics()
     }
@@ -399,10 +416,11 @@ impl TrainingState {
     /// # Returns
     ///
     /// `true` if loss is within `mean ± sigma_threshold * std`.
+    #[must_use] 
     pub fn loss_within_bounds(&self, sigma_threshold: f32) -> bool {
         let stats = self.loss_statistics();
-        let bound = stats.std * sigma_threshold as f64;
-        let deviation = (self.loss as f64 - stats.mean).abs();
+        let bound = stats.std * f64::from(sigma_threshold);
+        let deviation = (f64::from(self.loss) - stats.mean).abs();
         deviation <= bound
     }
     
@@ -414,6 +432,7 @@ impl TrainingState {
     /// # Returns
     ///
     /// A vector of f32 features with length determined by the feature set.
+    #[must_use] 
     pub fn compute_features(&self) -> Vec<f32> {
         let mut features = Vec::with_capacity(64);
         
@@ -427,9 +446,9 @@ impl TrainingState {
         // Loss trend (recent vs older)
         if self.loss_history.len() >= 32 {
             // Collect to Vec first since RingBuffer iter doesn't implement DoubleEndedIterator
-            let all_losses: Vec<f32> = self.loss_history.iter().cloned().collect();
-            let recent: Vec<f32> = all_losses.iter().rev().take(16).cloned().collect();
-            let older: Vec<f32> = all_losses.iter().rev().skip(16).take(16).cloned().collect();
+            let all_losses: Vec<f32> = self.loss_history.iter().copied().collect();
+            let recent: Vec<f32> = all_losses.iter().rev().take(16).copied().collect();
+            let older: Vec<f32> = all_losses.iter().rev().skip(16).take(16).copied().collect();
             let recent_mean: f32 = recent.iter().sum::<f32>() / recent.len() as f32;
             let older_mean: f32 = older.iter().sum::<f32>() / older.len() as f32;
             features.push(recent_mean - older_mean); // Trend
@@ -543,6 +562,7 @@ pub struct WeightDeltaMetadata {
 
 impl WeightDelta {
     /// Creates a new empty weight delta.
+    #[must_use] 
     pub fn empty() -> Self {
         Self {
             deltas: std::collections::HashMap::new(),
@@ -552,6 +572,7 @@ impl WeightDelta {
     }
     
     /// Creates a weight delta with the given per-parameter deltas.
+    #[must_use] 
     pub fn new(deltas: std::collections::HashMap<String, Vec<f32>>) -> Self {
         Self {
             deltas,
@@ -573,6 +594,7 @@ impl WeightDelta {
     /// # Arguments
     ///
     /// * `scale` - The scale factor for the delta
+    #[must_use] 
     pub fn scaled_identity(scale: f32) -> Self {
         Self {
             deltas: std::collections::HashMap::new(),
@@ -602,6 +624,7 @@ impl LinearStateEncoder {
     /// # Arguments
     ///
     /// * `latent_dim` - Dimension of the encoded state
+    #[must_use] 
     pub fn new(latent_dim: usize) -> Self {
         Self {
             feature_dim: 32, // From TrainingState::compute_features

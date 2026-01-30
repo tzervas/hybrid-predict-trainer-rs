@@ -1,7 +1,7 @@
 //! RSSM-lite dynamics model for training trajectory prediction.
 //!
 //! This module implements a simplified Recurrent State-Space Model (RSSM)
-//! inspired by DreamerV3 for predicting training dynamics. The model
+//! inspired by `DreamerV3` for predicting training dynamics. The model
 //! combines deterministic (GRU-based) and stochastic components to capture
 //! both predictable trends and inherent uncertainty in training.
 //!
@@ -62,6 +62,7 @@ pub struct LatentState {
 
 impl LatentState {
     /// Creates a new latent state with the given dimensions.
+    #[must_use] 
     pub fn new(deterministic_dim: usize, stochastic_dim: usize) -> Self {
         let combined_dim = deterministic_dim + stochastic_dim;
         Self {
@@ -302,6 +303,7 @@ impl RSSMLite {
     /// # Returns
     ///
     /// Prediction with uncertainty estimate.
+    #[must_use] 
     pub fn predict_y_steps(
         &self,
         state: &TrainingState,
@@ -331,7 +333,7 @@ impl RSSMLite {
         // Get predictions from each ensemble member
         let mut predictions: Vec<f32> = Vec::with_capacity(self.config.ensemble_size);
         
-        for (_i, latent) in self.latent_states.iter().enumerate() {
+        for latent in self.latent_states.iter() {
             // Simple prediction: dot product of combined state with loss head
             let pred: f32 = latent.combined
                 .iter()
@@ -378,6 +380,7 @@ impl RSSMLite {
     }
     
     /// Returns the prediction confidence for the current state.
+    #[must_use] 
     pub fn prediction_confidence(&self, state: &TrainingState) -> f32 {
         // Base confidence from ensemble agreement
         let (_, uncertainty) = self.predict_y_steps(state, 10);
@@ -391,7 +394,7 @@ impl RSSMLite {
                 .iter()
                 .rev()
                 .take(50)
-                .cloned()
+                .copied()
                 .collect();
             let mean_error: f32 = recent_errors.iter().sum::<f32>() / recent_errors.len() as f32;
             (1.0 / (1.0 + mean_error)).min(0.99)
@@ -441,6 +444,7 @@ impl RSSMLite {
     }
     
     /// Returns the number of training updates performed.
+    #[must_use] 
     pub fn training_steps(&self) -> usize {
         self.training_steps
     }

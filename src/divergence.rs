@@ -39,11 +39,13 @@ pub struct DivergenceCheckResult {
 
 impl DivergenceCheckResult {
     /// Returns whether any concerning signals were detected.
+    #[must_use] 
     pub fn is_concerning(&self) -> bool {
         self.level > DivergenceLevel::Normal
     }
     
     /// Returns whether immediate action is needed.
+    #[must_use] 
     pub fn needs_immediate_action(&self) -> bool {
         self.level >= DivergenceLevel::Warning
     }
@@ -112,6 +114,7 @@ pub struct DivergenceMonitor {
 
 impl DivergenceMonitor {
     /// Creates a new divergence monitor with the given configuration.
+    #[must_use] 
     pub fn new(config: &HybridTrainerConfig) -> Self {
         Self {
             config: config.divergence_config.clone(),
@@ -130,6 +133,7 @@ impl DivergenceMonitor {
     }
     
     /// Creates a monitor with default configuration.
+    #[must_use] 
     pub fn default_config() -> Self {
         Self::new(&HybridTrainerConfig::default())
     }
@@ -426,16 +430,19 @@ impl DivergenceMonitor {
     }
     
     /// Returns the current loss EMA.
+    #[must_use] 
     pub fn loss_ema(&self) -> f32 {
         self.loss_ema
     }
     
     /// Returns the current loss standard deviation estimate.
+    #[must_use] 
     pub fn loss_std(&self) -> f32 {
         self.loss_var_ema.sqrt()
     }
     
     /// Returns the current gradient norm EMA.
+    #[must_use] 
     pub fn gradient_norm_ema(&self) -> f32 {
         self.gradient_norm_ema
     }
