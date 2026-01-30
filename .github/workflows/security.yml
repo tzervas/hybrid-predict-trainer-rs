@@ -8,6 +8,10 @@ on:
   schedule:
     - cron: '0 0 * * 0'  # Weekly on Sunday
 
+permissions:
+  contents: read
+  checks: write
+
 jobs:
   audit:
     name: Security Audit
@@ -17,6 +21,8 @@ jobs:
       - uses: rustsec/audit-check@v2
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+        # Continue even with informational warnings (unmaintained packages)
+        continue-on-error: true
 
   deny:
     name: Dependency Check

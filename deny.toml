@@ -1,3 +1,6 @@
+# cargo-deny configuration
+# https://embarkstudios.github.io/cargo-deny/
+
 [graph]
 targets = []
 all-features = true
@@ -5,11 +8,10 @@ all-features = true
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-# Deny known security vulnerabilities
 ignore = []
 
 [licenses]
-unlicensed = "deny"
+# List of allowed licenses
 allow = [
     "MIT",
     "Apache-2.0",
@@ -22,7 +24,10 @@ allow = [
     "Unicode-3.0",
     "CC0-1.0",
     "MPL-2.0",
+    "OpenSSL",
 ]
+confidence-threshold = 0.8
+private = { ignore = true }
 
 [[licenses.clarify]]
 name = "ring"
