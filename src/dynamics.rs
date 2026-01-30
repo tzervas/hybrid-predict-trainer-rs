@@ -193,7 +193,8 @@ pub struct RSSMLite {
     /// Historical prediction errors for confidence estimation.
     prediction_errors: Vec<f32>,
     
-    /// Temperature for stochastic sampling.
+    /// Temperature for stochastic sampling (reserved for future use).
+    #[allow(dead_code)]
     temperature: f32,
 }
 

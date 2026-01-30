@@ -1,4 +1,5 @@
 //! Phase state machine and execution control.
+#![allow(clippy::match_same_arms)]
 //!
 //! This module implements the state machine that governs transitions between
 //! training phases (Warmup → Full → Predict → Correct) and provides the

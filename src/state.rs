@@ -50,10 +50,12 @@ impl Default for MultiScaleEMA {
 }
 
 impl MultiScaleEMA {
-    #[must_use] 
+    /// Creates a new multi-scale EMA with zeroed initial values.
+    #[must_use]
     pub fn new() -> Self {
         Self { fast: 0.0, medium: 0.0, slow: 0.0, count: 0 }
     }
+    /// Updates all EMA scales with a new value.
     pub fn update(&mut self, value: f32) {
         self.count += 1;
         if self.count == 1 {
