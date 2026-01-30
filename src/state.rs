@@ -1,0 +1,584 @@
+//! Training state management and encoding.
+//!
+//! This module provides the [`TrainingState`] struct that captures the complete
+//! state of training at any point in time, along with utilities for encoding
+//! state into compact representations suitable for the dynamics predictor.
+//!
+//! # Overview
+//!
+//! Training state encompasses:
+//! - Current step and loss values
+//! - Historical loss and gradient norm trajectories
+//! - Optimizer state summaries (momentum, variance estimates)
+//! - Optional K-FAC factors for structured gradient approximation
+//!
+//! The state encoder compresses this information into a fixed-size latent
+//! representation that captures the essential training dynamics while
+//! remaining small enough for efficient prediction.
+//!
+//! # Example
+//!
+//! ```rust
+//! use hybrid_predict_trainer_rs::state::{TrainingState, StateEncoder};
+//!
+//! // Create a new training state
+//! let mut state = TrainingState::new();
+//!
+//! // Update state after each step
+//! state.record_step(2.5, 1.2); // loss, gradient_norm
+//! state.record_step(2.3, 1.1);
+//! state.record_step(2.1, 1.0);
+//!
+//! // Encode for prediction
+//! // let encoder = StateEncoder::new(128);
+//! // let encoded = encoder.encode(&state);
+//! ```
+
+use serde::{Deserialize, Serialize};
+
+/// Fixed-size ring buffer for history tracking.
+///
+/// Provides O(1) insertion and maintains the most recent N values.
+/// Used for loss and gradient norm history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RingBuffer<T, const N: usize> {
+    buffer: Vec<T>,
+    head: usize,
+    len: usize,
+}
+
+impl<T: Clone + Default, const N: usize> Default for RingBuffer<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
+    /// Creates a new empty ring buffer.
+    pub fn new() -> Self {
+        Self {
+            buffer: vec![T::default(); N],
+            head: 0,
+            len: 0,
+        }
+    }
+    
+    /// Pushes a value into the buffer, overwriting the oldest if full.
+    pub fn push(&mut self, value: T) {
+        self.buffer[self.head] = value;
+        self.head = (self.head + 1) % N;
+        if self.len < N {
+            self.len += 1;
+        }
+    }
+    
+    /// Returns the number of values in the buffer.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+    
+    /// Returns whether the buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+    
+    /// Returns an iterator over values in chronological order (oldest first).
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        let start = if self.len < N { 0 } else { self.head };
+        let len = self.len;
+        let buffer = &self.buffer;
+        (0..len).map(move |i| &buffer[(start + i) % N])
+    }
+    
+    /// Returns an iterator over values in reverse chronological order (newest first).
+    pub fn iter_rev(&self) -> impl Iterator<Item = &T> {
+        let len = self.len;
+        let buffer = &self.buffer;
+        let head = self.head;
+        (0..len).map(move |i| {
+            let idx = if head == 0 { N - 1 - i } else { (head + N - 1 - i) % N };
+            &buffer[idx]
+        })
+    }
+    
+    /// Returns the most recent value, if any.
+    pub fn last(&self) -> Option<&T> {
+        if self.len == 0 {
+            None
+        } else {
+            let idx = if self.head == 0 { N - 1 } else { self.head - 1 };
+            Some(&self.buffer[idx])
+        }
+    }
+    
+    /// Returns statistics (mean, std, min, max) for numeric buffers.
+    pub fn statistics(&self) -> BufferStatistics
+    where
+        T: Into<f64> + Copy,
+    {
+        if self.is_empty() {
+            return BufferStatistics::default();
+        }
+        
+        let values: Vec<f64> = self.iter().map(|&v| v.into()).collect();
+        let n = values.len() as f64;
+        let mean = values.iter().sum::<f64>() / n;
+        let variance = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
+        let std = variance.sqrt();
+        let min = values.iter().cloned().fold(f64::INFINITY, f64::min);
+        let max = values.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        
+        BufferStatistics { mean, std, min, max }
+    }
+}
+
+/// Statistics computed from a ring buffer.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BufferStatistics {
+    /// Mean of values.
+    pub mean: f64,
+    /// Standard deviation of values.
+    pub std: f64,
+    /// Minimum value.
+    pub min: f64,
+    /// Maximum value.
+    pub max: f64,
+}
+
+/// Summary of optimizer state for encoding.
+///
+/// Captures the essential characteristics of the optimizer's internal
+/// state (e.g., Adam momentum and variance estimates) without storing
+/// the full tensors.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OptimizerStateSummary {
+    /// Mean of first moment estimates (momentum).
+    pub momentum_mean: f32,
+    /// Standard deviation of first moment estimates.
+    pub momentum_std: f32,
+    /// Mean of second moment estimates (variance).
+    pub variance_mean: f32,
+    /// Standard deviation of second moment estimates.
+    pub variance_std: f32,
+    /// Current effective learning rate (after scheduling).
+    pub effective_lr: f32,
+    /// Beta1^t decay factor for bias correction.
+    pub beta1_power: f32,
+    /// Beta2^t decay factor for bias correction.
+    pub beta2_power: f32,
+}
+
+/// K-FAC (Kronecker-Factored Approximate Curvature) factors.
+///
+/// These capture structured gradient information through factorized
+/// approximations of the Fisher information matrix.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct KFACFactors {
+    /// Per-layer input activation covariance (A factors).
+    pub activation_covariances: Vec<LayerKFACFactor>,
+    /// Per-layer backpropagated gradient covariance (G factors).
+    pub gradient_covariances: Vec<LayerKFACFactor>,
+}
+
+/// K-FAC factor for a single layer.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct LayerKFACFactor {
+    /// Layer name/identifier.
+    pub layer_name: String,
+    /// Eigenvalues of the factor (top-k for efficiency).
+    pub eigenvalues: Vec<f32>,
+    /// Trace of the full factor matrix.
+    pub trace: f32,
+    /// Exponential moving average decay used.
+    pub ema_decay: f32,
+}
+
+/// Complete training state at a point in time.
+///
+/// Captures all information needed to:
+/// 1. Resume training from this point
+/// 2. Encode state for dynamics prediction
+/// 3. Detect divergence and anomalies
+///
+/// # Memory Footprint
+///
+/// With default history sizes (256 loss, 64 gradient):
+/// - Core fields: ~50 bytes
+/// - Loss history: ~1 KB
+/// - Gradient history: ~256 bytes
+/// - Optimizer summary: ~32 bytes
+/// - K-FAC factors (optional): Varies by model size
+///
+/// Total: ~1.5 KB without K-FAC, plus ~100 KB per 1B parameters with K-FAC.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrainingState {
+    /// Current training step (0-indexed).
+    pub step: u64,
+    
+    /// Current loss value.
+    pub loss: f32,
+    
+    /// History of recent loss values.
+    pub loss_history: RingBuffer<f32, 256>,
+    
+    /// Current gradient norm.
+    pub gradient_norm: f32,
+    
+    /// History of recent gradient norms.
+    pub gradient_norm_history: RingBuffer<f32, 64>,
+    
+    /// Checksum for detecting unexpected weight changes.
+    ///
+    /// Computed as a hash of sampled weight values for efficiency.
+    pub weight_checksum: u64,
+    
+    /// Summary of optimizer internal state.
+    pub optimizer_state_summary: OptimizerStateSummary,
+    
+    /// K-FAC factors for structured prediction (optional).
+    ///
+    /// Only populated if K-FAC encoding is enabled in configuration.
+    pub kfac_factors: Option<KFACFactors>,
+    
+    /// Current phase within the training cycle.
+    pub current_phase: crate::Phase,
+    
+    /// Step within the current phase.
+    pub phase_step: usize,
+    
+    /// Random state for reproducibility.
+    pub random_seed: u64,
+}
+
+impl Default for TrainingState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TrainingState {
+    /// Creates a new training state at step 0.
+    pub fn new() -> Self {
+        Self {
+            step: 0,
+            loss: f32::NAN,
+            loss_history: RingBuffer::new(),
+            gradient_norm: f32::NAN,
+            gradient_norm_history: RingBuffer::new(),
+            weight_checksum: 0,
+            optimizer_state_summary: OptimizerStateSummary::default(),
+            kfac_factors: None,
+            current_phase: crate::Phase::Warmup,
+            phase_step: 0,
+            random_seed: 0,
+        }
+    }
+    
+    /// Records metrics from a training step.
+    ///
+    /// # Arguments
+    ///
+    /// * `loss` - The loss value for this step
+    /// * `gradient_norm` - The global gradient norm for this step
+    pub fn record_step(&mut self, loss: f32, gradient_norm: f32) {
+        self.step += 1;
+        self.loss = loss;
+        self.gradient_norm = gradient_norm;
+        self.loss_history.push(loss);
+        self.gradient_norm_history.push(gradient_norm);
+        self.phase_step += 1;
+    }
+    
+    /// Transitions to a new phase.
+    ///
+    /// # Arguments
+    ///
+    /// * `phase` - The new phase to enter
+    pub fn enter_phase(&mut self, phase: crate::Phase) {
+        self.current_phase = phase;
+        self.phase_step = 0;
+    }
+    
+    /// Returns statistics about recent loss values.
+    pub fn loss_statistics(&self) -> BufferStatistics {
+        self.loss_history.statistics()
+    }
+    
+    /// Returns statistics about recent gradient norms.
+    pub fn gradient_statistics(&self) -> BufferStatistics {
+        self.gradient_norm_history.statistics()
+    }
+    
+    /// Checks if loss is within expected bounds.
+    ///
+    /// # Arguments
+    ///
+    /// * `sigma_threshold` - Number of standard deviations for bounds
+    ///
+    /// # Returns
+    ///
+    /// `true` if loss is within `mean ± sigma_threshold * std`.
+    pub fn loss_within_bounds(&self, sigma_threshold: f32) -> bool {
+        let stats = self.loss_statistics();
+        let bound = stats.std * sigma_threshold as f64;
+        let deviation = (self.loss as f64 - stats.mean).abs();
+        deviation <= bound
+    }
+    
+    /// Computes a feature vector for state encoding.
+    ///
+    /// Returns a fixed-size vector of features derived from the training
+    /// state, suitable for input to the dynamics predictor.
+    ///
+    /// # Returns
+    ///
+    /// A vector of f32 features with length determined by the feature set.
+    pub fn compute_features(&self) -> Vec<f32> {
+        let mut features = Vec::with_capacity(64);
+        
+        // Loss features (8)
+        let loss_stats = self.loss_statistics();
+        features.push(self.loss);
+        features.push(loss_stats.mean as f32);
+        features.push(loss_stats.std as f32);
+        features.push(loss_stats.min as f32);
+        features.push(loss_stats.max as f32);
+        // Loss trend (recent vs older)
+        if self.loss_history.len() >= 32 {
+            // Collect to Vec first since RingBuffer iter doesn't implement DoubleEndedIterator
+            let all_losses: Vec<f32> = self.loss_history.iter().cloned().collect();
+            let recent: Vec<f32> = all_losses.iter().rev().take(16).cloned().collect();
+            let older: Vec<f32> = all_losses.iter().rev().skip(16).take(16).cloned().collect();
+            let recent_mean: f32 = recent.iter().sum::<f32>() / recent.len() as f32;
+            let older_mean: f32 = older.iter().sum::<f32>() / older.len() as f32;
+            features.push(recent_mean - older_mean); // Trend
+            features.push(recent_mean / older_mean.max(1e-8)); // Ratio
+        } else {
+            features.push(0.0);
+            features.push(1.0);
+        }
+        features.push(self.step as f32 / 10000.0); // Normalized step
+        
+        // Gradient features (8)
+        let grad_stats = self.gradient_statistics();
+        features.push(self.gradient_norm);
+        features.push(grad_stats.mean as f32);
+        features.push(grad_stats.std as f32);
+        features.push(grad_stats.min as f32);
+        features.push(grad_stats.max as f32);
+        features.push(self.gradient_norm.log10().max(-10.0)); // Log scale
+        features.push((self.gradient_norm / grad_stats.mean.max(1e-8) as f32).min(10.0)); // Relative
+        features.push(grad_stats.std as f32 / grad_stats.mean.max(1e-8) as f32); // CV
+        
+        // Optimizer features (8)
+        features.push(self.optimizer_state_summary.momentum_mean);
+        features.push(self.optimizer_state_summary.momentum_std);
+        features.push(self.optimizer_state_summary.variance_mean);
+        features.push(self.optimizer_state_summary.variance_std);
+        features.push(self.optimizer_state_summary.effective_lr.log10().max(-10.0));
+        features.push(self.optimizer_state_summary.beta1_power);
+        features.push(self.optimizer_state_summary.beta2_power);
+        features.push(0.0); // Reserved
+        
+        // Phase features (8)
+        features.push(match self.current_phase {
+            crate::Phase::Warmup => 0.0,
+            crate::Phase::Full => 1.0,
+            crate::Phase::Predict => 2.0,
+            crate::Phase::Correct => 3.0,
+        });
+        features.push(self.phase_step as f32 / 100.0);
+        // Pad to 32 features
+        while features.len() < 32 {
+            features.push(0.0);
+        }
+        
+        features
+    }
+}
+
+/// Trait for encoding training state into compact representations.
+///
+/// Implementations transform the full training state into a fixed-size
+/// latent vector suitable for the dynamics predictor.
+pub trait StateEncoder: Send + Sync {
+    /// The encoded state type.
+    type EncodedState: Clone + Send;
+    
+    /// Encodes the training state into a compact representation.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - The training state to encode
+    ///
+    /// # Returns
+    ///
+    /// The encoded state representation.
+    fn encode(&self, state: &TrainingState) -> Self::EncodedState;
+    
+    /// Decodes a predicted state delta back to weight changes.
+    ///
+    /// # Arguments
+    ///
+    /// * `encoded_delta` - The predicted change in encoded state
+    ///
+    /// # Returns
+    ///
+    /// The decoded weight delta.
+    fn decode_delta(&self, encoded_delta: &Self::EncodedState) -> WeightDelta;
+    
+    /// Returns the dimension of the encoded state.
+    fn encoding_dim(&self) -> usize;
+}
+
+/// Represents a change in model weights.
+///
+/// Can be applied to model parameters to update them according to
+/// a predicted or computed gradient step.
+#[derive(Debug, Clone)]
+pub struct WeightDelta {
+    /// Per-parameter deltas, keyed by parameter name.
+    pub deltas: std::collections::HashMap<String, Vec<f32>>,
+    
+    /// Global scale factor for all deltas.
+    pub scale: f32,
+    
+    /// Metadata about the delta computation.
+    pub metadata: WeightDeltaMetadata,
+}
+
+/// Metadata about a weight delta.
+#[derive(Debug, Clone, Default)]
+pub struct WeightDeltaMetadata {
+    /// Whether this delta was predicted (vs computed).
+    pub is_predicted: bool,
+    /// Confidence in the prediction (if predicted).
+    pub confidence: Option<f32>,
+    /// Source phase.
+    pub source_phase: Option<crate::Phase>,
+    /// Number of steps this delta represents.
+    pub num_steps: usize,
+}
+
+impl WeightDelta {
+    /// Creates a new empty weight delta.
+    pub fn empty() -> Self {
+        Self {
+            deltas: std::collections::HashMap::new(),
+            scale: 1.0,
+            metadata: WeightDeltaMetadata::default(),
+        }
+    }
+    
+    /// Creates a weight delta with the given per-parameter deltas.
+    pub fn new(deltas: std::collections::HashMap<String, Vec<f32>>) -> Self {
+        Self {
+            deltas,
+            scale: 1.0,
+            metadata: WeightDeltaMetadata::default(),
+        }
+    }
+    
+    /// Scales all deltas by the given factor.
+    pub fn scale_by(&mut self, factor: f32) {
+        self.scale *= factor;
+    }
+}
+
+/// Default state encoder using linear projection.
+///
+/// Projects the feature vector to a fixed-size latent space using
+/// a learned linear transformation.
+pub struct LinearStateEncoder {
+    feature_dim: usize,
+    latent_dim: usize,
+    // Projection matrix would be stored here
+}
+
+impl LinearStateEncoder {
+    /// Creates a new linear state encoder.
+    ///
+    /// # Arguments
+    ///
+    /// * `latent_dim` - Dimension of the encoded state
+    pub fn new(latent_dim: usize) -> Self {
+        Self {
+            feature_dim: 32, // From TrainingState::compute_features
+            latent_dim,
+        }
+    }
+}
+
+impl StateEncoder for LinearStateEncoder {
+    type EncodedState = Vec<f32>;
+    
+    fn encode(&self, state: &TrainingState) -> Self::EncodedState {
+        // Placeholder: just return features padded/truncated to latent_dim
+        let features = state.compute_features();
+        let mut encoded = vec![0.0; self.latent_dim];
+        for (i, &f) in features.iter().enumerate() {
+            if i < self.latent_dim {
+                encoded[i] = f;
+            }
+        }
+        encoded
+    }
+    
+    fn decode_delta(&self, _encoded_delta: &Self::EncodedState) -> WeightDelta {
+        // Placeholder implementation
+        WeightDelta::empty()
+    }
+    
+    fn encoding_dim(&self) -> usize {
+        self.latent_dim
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ring_buffer_push_and_iter() {
+        let mut buf: RingBuffer<f32, 4> = RingBuffer::new();
+        buf.push(1.0);
+        buf.push(2.0);
+        buf.push(3.0);
+        
+        let values: Vec<f32> = buf.iter().cloned().collect();
+        assert_eq!(values, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_ring_buffer_overflow() {
+        let mut buf: RingBuffer<i32, 3> = RingBuffer::new();
+        buf.push(1);
+        buf.push(2);
+        buf.push(3);
+        buf.push(4); // Overwrites 1
+        
+        let values: Vec<i32> = buf.iter().cloned().collect();
+        assert_eq!(values, vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn test_training_state_record_step() {
+        let mut state = TrainingState::new();
+        state.record_step(2.5, 1.0);
+        state.record_step(2.3, 0.9);
+        
+        assert_eq!(state.step, 2);
+        assert!((state.loss - 2.3).abs() < f32::EPSILON);
+        assert_eq!(state.loss_history.len(), 2);
+    }
+
+    #[test]
+    fn test_compute_features() {
+        let mut state = TrainingState::new();
+        state.record_step(2.5, 1.0);
+        state.record_step(2.3, 0.9);
+        
+        let features = state.compute_features();
+        assert!(features.len() >= 32);
+    }
+}
