@@ -108,6 +108,19 @@
 #![warn(missing_docs)]
 #![warn(rustdoc::missing_crate_level_docs)]
 #![deny(unsafe_code)]
+// Allow precision loss casts - acceptable in ML numerical code
+#![allow(clippy::cast_precision_loss)]
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_sign_loss)]
+// Suppress documentation warnings during development
+#![allow(clippy::missing_errors_doc)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::too_many_lines)]
+// Allow other common patterns
+#![allow(clippy::needless_range_loop)]
+#![allow(clippy::items_after_statements)]
+#![allow(clippy::unused_self)]
+#![allow(clippy::manual_clamp)]
 
 // Core modules
 pub mod config;
