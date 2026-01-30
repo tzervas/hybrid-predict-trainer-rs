@@ -414,7 +414,52 @@ impl RSSMLite {
     pub fn training_steps(&self) -> usize {
         self.training_steps
     }
-    
+
+    /// Observes a gradient computation step for online learning.
+    ///
+    /// Called during full training steps to update the dynamics model
+    /// with observed gradient information.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - Current training state
+    /// * `grad_info` - Gradient information from the backward pass
+    pub fn observe_gradient(&mut self, state: &TrainingState, grad_info: &crate::GradientInfo) {
+        // Record the prediction error if we have a recent prediction
+        let (prediction, _) = self.predict_y_steps(state, 1);
+        let actual_loss = state.loss;
+        let error = (prediction.predicted_final_loss - actual_loss).abs();
+
+        self.prediction_errors.push(error);
+        if self.prediction_errors.len() > 1000 {
+            self.prediction_errors.remove(0);
+        }
+
+        // Update model weights using gradient information
+        let learning_rate = self.config.learning_rate;
+        let error_signal = prediction.predicted_final_loss - actual_loss;
+
+        // Update loss head weights
+        for (i, &combined) in self.latent_states[0].combined.iter().enumerate() {
+            if i < self.loss_head_weights.len() {
+                self.loss_head_weights[i] -= learning_rate * error_signal * combined;
+            }
+        }
+
+        // Update GRU state based on gradient norm (incorporate new information)
+        let grad_scale = (grad_info.gradient_norm / 10.0).min(1.0);
+        for latent in &mut self.latent_states {
+            // Shift deterministic state slightly based on gradient direction
+            let len = latent.deterministic.len() as f32;
+            for (i, val) in latent.deterministic.iter_mut().enumerate() {
+                *val = (*val * 0.99) + (grad_scale * (i as f32 / len - 0.5) * 0.01);
+            }
+            latent.update_combined();
+        }
+
+        self.training_steps += 1;
+    }
+
     /// Resets the model to initial state.
     pub fn reset(&mut self) {
         for latent in &mut self.latent_states {

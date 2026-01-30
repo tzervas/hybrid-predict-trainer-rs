@@ -483,6 +483,26 @@ impl WeightDelta {
     pub fn scale_by(&mut self, factor: f32) {
         self.scale *= factor;
     }
+
+    /// Creates a scaled identity-like delta.
+    ///
+    /// This creates an empty delta with a specific scale factor,
+    /// useful for placeholder corrections.
+    ///
+    /// # Arguments
+    ///
+    /// * `scale` - The scale factor for the delta
+    pub fn scaled_identity(scale: f32) -> Self {
+        Self {
+            deltas: std::collections::HashMap::new(),
+            scale,
+            metadata: WeightDeltaMetadata {
+                is_predicted: true,
+                confidence: Some(1.0),
+                ..Default::default()
+            },
+        }
+    }
 }
 
 /// Default state encoder using linear projection.
