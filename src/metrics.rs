@@ -238,25 +238,66 @@ impl MetricsCollector {
         if !self.enabled {
             return;
         }
-        
+
         // Update per-phase counters
         *self.phase_step_counts.entry(metrics.phase).or_insert(0) += 1;
         *self.phase_times.entry(metrics.phase).or_insert(0.0) += metrics.time_ms;
-        
+
         // Track prediction errors
         if let Some(error) = metrics.prediction_error {
             self.prediction_errors.push(error);
         }
-        
+
         // Update statistics
         self.statistics.total_steps = metrics.step;
         self.statistics.final_loss = metrics.loss;
-        
+
         // Store step metrics (with eviction if needed)
         if self.step_metrics.len() >= self.max_step_metrics {
             self.step_metrics.remove(0);
         }
         self.step_metrics.push(metrics);
+    }
+
+    /// Records metrics for a training step from individual values.
+    ///
+    /// Convenience method that creates a StepMetrics and records it.
+    ///
+    /// # Arguments
+    ///
+    /// * `step` - Current training step
+    /// * `loss` - Loss value
+    /// * `phase` - Current phase
+    /// * `was_predicted` - Whether predictions were used
+    /// * `prediction_error` - Error between predicted and actual (if applicable)
+    /// * `confidence` - Predictor confidence level
+    ///
+    /// # Returns
+    ///
+    /// The created StepMetrics struct.
+    pub fn record_step_data(
+        &mut self,
+        step: u64,
+        loss: f32,
+        phase: Phase,
+        was_predicted: bool,
+        prediction_error: Option<f32>,
+        confidence: f32,
+    ) -> StepMetrics {
+        let metrics = StepMetrics {
+            step,
+            loss,
+            gradient_norm: 0.0, // Updated separately if available
+            phase,
+            was_predicted,
+            prediction_error,
+            confidence,
+            time_ms: 0.0, // Will be updated by caller
+            learning_rate: None,
+        };
+
+        self.record_step(metrics.clone());
+        metrics
     }
     
     /// Records metrics for a completed phase.
