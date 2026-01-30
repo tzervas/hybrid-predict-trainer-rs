@@ -5,10 +5,8 @@ all-features = true
 [advisories]
 db-path = "~/.cargo/advisory-db"
 db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
+# Deny known security vulnerabilities
+ignore = []
 
 [licenses]
 unlicensed = "deny"
@@ -25,7 +23,6 @@ allow = [
     "CC0-1.0",
     "MPL-2.0",
 ]
-copyleft = "warn"
 
 [[licenses.clarify]]
 name = "ring"
