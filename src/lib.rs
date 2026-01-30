@@ -123,6 +123,7 @@ pub mod residuals;
 pub mod corrector;
 
 // Prediction and control
+pub mod gru;
 pub mod dynamics;
 pub mod divergence;
 pub mod bandit;

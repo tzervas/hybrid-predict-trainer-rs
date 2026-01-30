@@ -249,10 +249,17 @@ impl RSSMLite {
         let gru_weights: Vec<_> = (0..rssm_config.ensemble_size)
             .map(|_| GRUWeights::new(rssm_config.input_dim, rssm_config.deterministic_dim))
             .collect();
-        
+
         let combined_dim = rssm_config.deterministic_dim + rssm_config.stochastic_dim;
-        let loss_head_weights = vec![0.0; combined_dim];
-        
+
+        // Initialize loss head weights with small random values (not zero!)
+        use rand::Rng;
+        let mut rng = rand::rng();
+        let scale = 0.01;
+        let loss_head_weights: Vec<f32> = (0..combined_dim)
+            .map(|_| rng.random_range(-scale..scale))
+            .collect();
+
         Ok(Self {
             config: rssm_config,
             latent_states,
@@ -590,5 +597,112 @@ mod tests {
         
         // Should have reasonable confidence with low errors
         assert!(confidence > 0.5, "confidence={} should be > 0.5", confidence);
+    }
+
+    #[test]
+    fn test_multistep_rollout() {
+        let config = PredictorConfig::default();
+        let mut rssm = RSSMLite::new(&config).unwrap();
+
+        let mut state = TrainingState::new();
+        state.loss = 2.5;
+        state.record_step(2.5, 1.0);
+        rssm.initialize_state(&state);
+
+        // Test different horizon lengths
+        for y_steps in [1, 5, 10, 20, 50] {
+            let (prediction, uncertainty) = rssm.predict_y_steps(&state, y_steps);
+
+            // Trajectory should have at least 2 points (start + some samples)
+            assert!(
+                prediction.loss_trajectory.len() >= 2,
+                "trajectory length {} for y_steps {}",
+                prediction.loss_trajectory.len(),
+                y_steps
+            );
+
+            // First point should be current loss
+            assert_eq!(prediction.loss_trajectory[0], state.loss);
+
+            // Uncertainty should be non-negative
+            assert!(uncertainty.total >= 0.0);
+
+            // Confidence should be in valid range
+            assert!(prediction.confidence > 0.0 && prediction.confidence <= 1.0);
+        }
+    }
+
+    #[test]
+    fn test_uncertainty_growth() {
+        let config = PredictorConfig::default();
+        let mut rssm = RSSMLite::new(&config).unwrap();
+
+        let mut state = TrainingState::new();
+        state.loss = 2.5;
+        state.record_step(2.5, 1.0);
+        rssm.initialize_state(&state);
+
+        // Uncertainty should grow with prediction horizon
+        let (_, unc_1) = rssm.predict_y_steps(&state, 1);
+        let (_, unc_10) = rssm.predict_y_steps(&state, 10);
+        let (_, unc_50) = rssm.predict_y_steps(&state, 50);
+
+        assert!(
+            unc_10.total >= unc_1.total,
+            "unc_10 ({}) should be >= unc_1 ({})",
+            unc_10.total,
+            unc_1.total
+        );
+        assert!(
+            unc_50.total >= unc_10.total,
+            "unc_50 ({}) should be >= unc_10 ({})",
+            unc_50.total,
+            unc_10.total
+        );
+    }
+
+    #[test]
+    fn test_zero_steps_edge_case() {
+        let config = PredictorConfig::default();
+        let mut rssm = RSSMLite::new(&config).unwrap();
+
+        let mut state = TrainingState::new();
+        state.loss = 2.5;
+        rssm.initialize_state(&state);
+
+        let (prediction, uncertainty) = rssm.predict_y_steps(&state, 0);
+
+        // Should return current state
+        assert_eq!(prediction.predicted_final_loss, state.loss);
+        assert_eq!(prediction.num_steps, 0);
+        assert_eq!(uncertainty.total, 0.0);
+        assert_eq!(prediction.confidence, 1.0);
+    }
+
+    #[test]
+    fn test_single_vs_multistep() {
+        let config = PredictorConfig::default();
+        let mut rssm = RSSMLite::new(&config).unwrap();
+
+        let mut state = TrainingState::new();
+        state.loss = 2.5;
+        state.record_step(2.5, 1.0);
+        rssm.initialize_state(&state);
+
+        // Single step prediction
+        let (pred_1, unc_1) = rssm.predict_y_steps(&state, 1);
+
+        // Multi-step prediction
+        let (pred_10, unc_10) = rssm.predict_y_steps(&state, 10);
+
+        // Multi-step should have equal or more uncertainty
+        assert!(unc_10.total >= unc_1.total);
+
+        // Both should have valid predictions
+        assert!(pred_1.predicted_final_loss > 0.0);
+        assert!(pred_10.predicted_final_loss > 0.0);
+
+        // Multi-step trajectory should be longer or equal
+        assert!(pred_10.loss_trajectory.len() >= pred_1.loss_trajectory.len());
     }
 }
