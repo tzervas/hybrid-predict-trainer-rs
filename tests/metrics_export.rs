@@ -6,7 +6,8 @@ use hybrid_predict_trainer_rs::timing::{Duration, TimingMetrics};
 
 /// Helper to create step metrics with proper timing
 fn make_step(step: u64, phase: Phase, time_ms: f64, prediction_error: Option<f32>) -> StepMetrics {
-    let timing = TimingMetrics::wall_clock_only(Duration::from_nanos((time_ms * 1_000_000.0) as u64));
+    let timing =
+        TimingMetrics::wall_clock_only(Duration::from_nanos((time_ms * 1_000_000.0) as u64));
     StepMetrics {
         step,
         loss: 2.0,

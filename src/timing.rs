@@ -703,10 +703,7 @@ mod tests {
 
     #[test]
     fn test_timing_metrics() {
-        let metrics = TimingMetrics::with_gpu(
-            Duration::from_millis(10),
-            Duration::from_millis(8),
-        );
+        let metrics = TimingMetrics::with_gpu(Duration::from_millis(10), Duration::from_millis(8));
 
         assert_eq!(metrics.wall_clock_ms(), 10.0);
         assert_eq!(metrics.gpu_compute_ms(), Some(8.0));

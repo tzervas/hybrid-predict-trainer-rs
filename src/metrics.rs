@@ -665,9 +665,7 @@ impl MetricsCollector {
     /// Returns total wall-clock time for a phase in nanoseconds.
     #[must_use]
     pub fn phase_total_time_nanos(&self, phase: Phase) -> u64 {
-        self.phase_times
-            .get(&phase)
-            .map_or(0, Duration::as_nanos)
+        self.phase_times.get(&phase).map_or(0, Duration::as_nanos)
     }
 
     /// Returns total GPU time for a phase in nanoseconds.
@@ -838,10 +836,7 @@ mod tests {
 
     #[test]
     fn test_gpu_timing() {
-        let timing = TimingMetrics::with_gpu(
-            Duration::from_millis(10),
-            Duration::from_millis(8),
-        );
+        let timing = TimingMetrics::with_gpu(Duration::from_millis(10), Duration::from_millis(8));
 
         assert_eq!(timing.wall_clock_ms(), 10.0);
         assert_eq!(timing.gpu_compute_ms(), Some(8.0));
