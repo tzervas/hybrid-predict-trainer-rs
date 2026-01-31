@@ -863,8 +863,14 @@ mod tests {
         // Multi-step prediction
         let (pred_10, unc_10) = rssm.predict_y_steps(&state, 10);
 
-        // Multi-step should have equal or more uncertainty
-        assert!(unc_10.total >= unc_1.total);
+        // Multi-step should have approximately equal or more uncertainty
+        // Allow small floating point tolerance
+        assert!(
+            unc_10.total >= unc_1.total - 1e-6,
+            "Expected unc_10.total ({}) >= unc_1.total ({}) - epsilon",
+            unc_10.total,
+            unc_1.total
+        );
 
         // Both should have valid predictions
         assert!(pred_1.predicted_final_loss > 0.0);
