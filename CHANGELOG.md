@@ -27,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README with quick start guide
 - CLAUDE.md development context
 - Research documentation in docs/research/
-- Integration guides in docs/integration/
 
 ### Features
 - `cuda` - GPU acceleration via CubeCL
@@ -59,5 +58,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Benchmark scaffolding
 - Example programs
 
-[Unreleased]: https://github.com/tzervas/hybrid-predict-trainer-rs/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/tzervas/hybrid-predict-trainer-rs/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/tzervas/hybrid-predict-trainer-rs/compare/v0.0.1...v0.1.0
 [0.0.1]: https://github.com/tzervas/hybrid-predict-trainer-rs/releases/tag/v0.0.1

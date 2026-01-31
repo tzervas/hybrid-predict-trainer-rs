@@ -86,14 +86,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-hybrid-predict-trainer-rs = "0.0.1"
+hybrid-predict-trainer-rs = "0.1"
 ```
 
 With CUDA acceleration:
 
 ```toml
 [dependencies]
-hybrid-predict-trainer-rs = { version = "0.0.1", features = ["cuda"] }
+hybrid-predict-trainer-rs = { version = "0.1", features = ["cuda"] }
 ```
 
 ## Quick Start
@@ -171,11 +171,17 @@ Preliminary results on standard benchmarks:
 
 ## Roadmap
 
-- [ ] Core training loop implementation
-- [ ] RSSM dynamics model integration
-- [ ] CubeCL CUDA kernels
-- [ ] Burn tensor operations
-- [ ] Comprehensive benchmarks
+- [x] Core training loop implementation
+- [x] RSSM dynamics model (RSSM-lite) integration
+- [x] GRU cell with forward pass and training
+- [x] Multi-signal divergence detection
+- [x] LinUCB bandit for phase selection
+- [x] Residual correction framework
+- [x] Comprehensive metrics collection
+- [x] 100+ unit and integration tests
+- [ ] CubeCL CUDA kernels (GPU feature scaffolded)
+- [ ] Burn tensor operations (integration ready)
+- [ ] Comprehensive benchmarks (scaffolded)
 - [ ] Integration examples (candle, tch-rs)
 - [ ] Distributed training support
 - [ ] Mixed precision support
@@ -215,7 +221,7 @@ cargo bench
 
 Licensed under the MIT License. See [LICENSE-MIT](LICENSE-MIT) for details.
 
-Copyright (c) 2025 Tyler Zervas
+Copyright (c) 2026 Tyler Zervas
 
 ## Acknowledgments
 
