@@ -3,8 +3,6 @@ name: CI
 on:
   push:
     branches: [main, staging, dev]
-  pull_request:
-    branches: [main, staging]
 
 env:
   CARGO_TERM_COLOR: always
