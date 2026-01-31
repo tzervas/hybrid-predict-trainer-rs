@@ -21,7 +21,7 @@ use rand::Rng;
 /// Implements the standard GRU equations:
 /// - z = `σ(W_z·x` + `U_z·h` + `b_z`)  [update gate]
 /// - r = `σ(W_r·x` + `U_r·h` + `b_r`)  [reset gate]
-/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  [candidate]
+/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  (candidate)
 /// - `h_new` = (1-z)⊙h + z⊙h̃  [new hidden state]
 ///
 /// # Gate Purposes
