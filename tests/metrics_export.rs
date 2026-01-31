@@ -2,6 +2,24 @@
 
 use hybrid_predict_trainer_rs::metrics::{MetricsCollector, StepMetrics};
 use hybrid_predict_trainer_rs::prelude::*;
+use hybrid_predict_trainer_rs::timing::{Duration, TimingMetrics};
+
+/// Helper to create step metrics with proper timing
+fn make_step(step: u64, phase: Phase, time_ms: f64, prediction_error: Option<f32>) -> StepMetrics {
+    let timing = TimingMetrics::wall_clock_only(Duration::from_nanos((time_ms * 1_000_000.0) as u64));
+    StepMetrics {
+        step,
+        loss: 2.0,
+        gradient_norm: 1.0,
+        phase,
+        was_predicted: phase == Phase::Predict,
+        prediction_error,
+        confidence: if phase == Phase::Predict { 0.9 } else { 0.5 },
+        timing,
+        time_ms,
+        learning_rate: Some(0.001),
+    }
+}
 
 #[test]
 fn test_metrics_collector_disabled() {
@@ -32,6 +50,7 @@ fn test_step_metrics_recording() {
         was_predicted: false,
         prediction_error: None,
         confidence: 0.5,
+        timing: TimingMetrics::wall_clock_only(Duration::from_millis(10)),
         time_ms: 10.0,
         learning_rate: Some(0.001),
     };
@@ -63,32 +82,12 @@ fn test_metrics_finalization() {
 
     // Record warmup steps
     for i in 0..10 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 3.0,
-            gradient_norm: 1.0,
-            phase: Phase::Warmup,
-            was_predicted: false,
-            prediction_error: None,
-            confidence: 0.5,
-            time_ms: 10.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Warmup, 10.0, None));
     }
 
     // Record predict steps
     for i in 10..30 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 2.5,
-            gradient_norm: 0.8,
-            phase: Phase::Predict,
-            was_predicted: true,
-            prediction_error: Some(0.1),
-            confidence: 0.9,
-            time_ms: 5.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Predict, 5.0, Some(0.1)));
     }
 
     collector.finalize();
@@ -118,17 +117,7 @@ fn test_summary_output() {
 
     // Add some steps
     for i in 0..5 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 2.0,
-            gradient_norm: 1.0,
-            phase: Phase::Warmup,
-            was_predicted: false,
-            prediction_error: None,
-            confidence: 0.5,
-            time_ms: 10.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Warmup, 10.0, None));
     }
 
     collector.finalize();
@@ -145,17 +134,7 @@ fn test_metrics_reset() {
 
     // Record steps
     for i in 0..10 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 2.0,
-            gradient_norm: 1.0,
-            phase: Phase::Warmup,
-            was_predicted: false,
-            prediction_error: None,
-            confidence: 0.5,
-            time_ms: 10.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Warmup, 10.0, None));
     }
 
     let stats_before = collector.statistics();
@@ -174,45 +153,15 @@ fn test_backward_reduction_calculation() {
 
     // 10 warmup (backward), 10 full (backward), 20 predict (no backward)
     for i in 0..10 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 2.0,
-            gradient_norm: 1.0,
-            phase: Phase::Warmup,
-            was_predicted: false,
-            prediction_error: None,
-            confidence: 0.5,
-            time_ms: 10.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Warmup, 10.0, None));
     }
 
     for i in 10..20 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 2.0,
-            gradient_norm: 1.0,
-            phase: Phase::Full,
-            was_predicted: false,
-            prediction_error: None,
-            confidence: 0.7,
-            time_ms: 10.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Full, 10.0, None));
     }
 
     for i in 20..40 {
-        collector.record_step(StepMetrics {
-            step: i,
-            loss: 2.0,
-            gradient_norm: 0.8,
-            phase: Phase::Predict,
-            was_predicted: true,
-            prediction_error: Some(0.1),
-            confidence: 0.9,
-            time_ms: 5.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i, Phase::Predict, 5.0, Some(0.1)));
     }
 
     collector.finalize();
@@ -238,17 +187,7 @@ fn test_prediction_error_tracking() {
     // Record steps with prediction errors
     let errors = vec![0.1, 0.2, 0.15, 0.25];
     for (i, &error) in errors.iter().enumerate() {
-        collector.record_step(StepMetrics {
-            step: i as u64,
-            loss: 2.0,
-            gradient_norm: 1.0,
-            phase: Phase::Predict,
-            was_predicted: true,
-            prediction_error: Some(error),
-            confidence: 0.9,
-            time_ms: 5.0,
-            learning_rate: Some(0.001),
-        });
+        collector.record_step(make_step(i as u64, Phase::Predict, 5.0, Some(error)));
     }
 
     collector.finalize();
@@ -257,4 +196,64 @@ fn test_prediction_error_tracking() {
     // Mean absolute error should be (0.1 + 0.2 + 0.15 + 0.25) / 4 = 0.175
     let expected_mae = 0.175;
     assert!((stats.prediction_accuracy.loss_mae - expected_mae).abs() < 0.01);
+}
+
+#[test]
+fn test_timing_granularity_in_metrics() {
+    let mut collector = MetricsCollector::new(true);
+
+    // Record with specific timing
+    let timing = TimingMetrics::wall_clock_only(Duration::from_nanos(1_500_000)); // 1.5ms
+    let metrics = StepMetrics {
+        step: 0,
+        loss: 2.0,
+        gradient_norm: 1.0,
+        phase: Phase::Full,
+        was_predicted: false,
+        prediction_error: None,
+        confidence: 0.8,
+        timing,
+        time_ms: 1.5,
+        learning_rate: Some(0.001),
+    };
+
+    collector.record_step(metrics.clone());
+
+    // Verify granularity accessors
+    assert_eq!(metrics.time_nanos(), 1_500_000);
+    assert_eq!(metrics.time_picos(), 1_500_000_000);
+    assert!((metrics.time_ms - 1.5).abs() < 0.001);
+}
+
+#[test]
+fn test_gpu_timing_metrics() {
+    let timing = TimingMetrics::with_gpu(
+        Duration::from_millis(10), // 10ms wall clock
+        Duration::from_millis(8),  // 8ms GPU compute
+    );
+
+    let metrics = StepMetrics {
+        step: 0,
+        loss: 2.0,
+        gradient_norm: 1.0,
+        phase: Phase::Predict,
+        was_predicted: true,
+        prediction_error: None,
+        confidence: 0.9,
+        timing,
+        time_ms: 10.0,
+        learning_rate: Some(0.001),
+    };
+
+    // Wall-clock time
+    assert_eq!(metrics.time_nanos(), 10_000_000);
+    assert!((metrics.time_ms - 10.0).abs() < 0.001);
+
+    // GPU compute time
+    assert_eq!(metrics.gpu_time_nanos(), Some(8_000_000));
+    assert_eq!(metrics.gpu_time_ms(), Some(8.0));
+    assert_eq!(metrics.gpu_time_picos(), Some(8_000_000_000));
+
+    // CPU overhead = wall_clock - gpu = 2ms
+    assert_eq!(metrics.timing.cpu_overhead().unwrap().as_millis(), 2);
 }

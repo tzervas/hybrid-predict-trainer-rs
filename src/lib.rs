@@ -151,6 +151,9 @@ pub mod gru;
 // Metrics and monitoring
 pub mod metrics;
 
+// High-precision timing utilities
+pub mod timing;
+
 // GPU acceleration (feature-gated)
 #[cfg(feature = "cuda")]
 #[cfg_attr(docsrs, doc(cfg(feature = "cuda")))]
@@ -161,6 +164,7 @@ pub use config::HybridTrainerConfig;
 pub use error::{HybridResult, HybridTrainingError, RecoveryAction};
 pub use phases::{Phase, PhaseController, PhaseDecision, PhaseOutcome};
 pub use state::TrainingState;
+pub use timing::{Duration, Timer, TimingMetrics, TimingStats};
 
 // Standard library imports
 use std::sync::Arc;
