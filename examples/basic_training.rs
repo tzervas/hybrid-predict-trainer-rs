@@ -16,7 +16,8 @@ use hybrid_predict_trainer_rs::state::WeightDelta;
 /// Mock batch implementing the Batch trait.
 #[derive(Debug, Clone)]
 struct MockBatch {
-    /// Simulated input data
+    /// Simulated input data (unused in mock, but demonstrates real batch structure)
+    #[allow(dead_code)]
     data: Vec<f32>,
     /// Batch size
     size: usize,
