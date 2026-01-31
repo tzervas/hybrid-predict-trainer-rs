@@ -4,6 +4,14 @@
 //! outcomes. They are extracted during full training phases and used
 //! during correction phases to improve prediction accuracy.
 //!
+//! # Why Store Residuals?
+//!
+//! Residuals encode the predictor's systematic errors. By storing them
+//! alongside the training state context, we can:
+//! - **Learn error patterns**: Similar states produce similar errors
+//! - **Improve predictions online**: Apply learned corrections to future predictions
+//! - **Diagnose predictor weaknesses**: Analyze residual distributions
+//!
 //! # Residual Types
 //!
 //! - **Loss residuals**: Difference between predicted and actual loss

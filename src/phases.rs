@@ -1,9 +1,16 @@
 //! Phase state machine and execution control.
-#![allow(clippy::match_same_arms)]
 //!
 //! This module implements the state machine that governs transitions between
 //! training phases (Warmup → Full → Predict → Correct) and provides the
 //! controller interface for making phase decisions.
+//!
+//! # Why a State Machine?
+//!
+//! Training dynamics evolve through distinct regimes that require different
+//! handling. A formal state machine ensures:
+//! - **Correctness**: Invalid transitions are rejected at compile/runtime
+//! - **Predictability**: Phase behavior is deterministic and testable
+//! - **Extensibility**: New phases can be added without breaking existing logic
 //!
 //! # Phase Descriptions
 //!
@@ -155,7 +162,11 @@ impl PhaseDecision {
     }
 
     /// Returns the number of steps for this phase.
+    ///
+    /// Each phase decision variant stores its step count differently, but this
+    /// method provides a uniform interface for callers who just need the count.
     #[must_use]
+    #[allow(clippy::match_same_arms)] // Keep arms separate for clarity on each variant
     pub fn steps(&self) -> usize {
         match self {
             PhaseDecision::Warmup { steps } => *steps,
@@ -462,6 +473,9 @@ impl PhaseController for DefaultPhaseController {
 
 /// Validates that a phase transition is legal.
 ///
+/// Each allowed transition is documented explicitly for clarity about the
+/// state machine rules, even though they share the same `true` return value.
+///
 /// # Arguments
 ///
 /// * `from` - Source phase
@@ -470,6 +484,7 @@ impl PhaseController for DefaultPhaseController {
 /// # Errors
 ///
 /// Returns an error if the transition is not allowed by the state machine.
+#[allow(clippy::match_same_arms)] // Each transition is documented separately for clarity
 pub fn validate_transition(from: Phase, to: Phase) -> HybridResult<()> {
     let valid = match (from, to) {
         // Warmup can only go to Full

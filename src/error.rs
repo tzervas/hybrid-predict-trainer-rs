@@ -4,6 +4,17 @@
 //! used throughout the hybrid trainer. Errors are designed to be actionable,
 //! providing both diagnostic information and suggested recovery actions.
 //!
+//! # Why Recoverable Errors?
+//!
+//! Training runs are expensive. Rather than failing on the first anomaly, the
+//! hybrid trainer attempts automatic recovery:
+//! - **Prediction divergence**: Fall back to full training temporarily
+//! - **Gradient explosion**: Reduce learning rate or rollback
+//! - **Numerical instability**: Skip batch and continue
+//!
+//! This design philosophy prioritizes training completion over perfection,
+//! enabling unsupervised training runs with self-healing behavior.
+//!
 //! # Error Categories
 //!
 //! - **Prediction Errors**: Divergence between predicted and actual outcomes

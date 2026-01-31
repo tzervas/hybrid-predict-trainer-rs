@@ -5,6 +5,15 @@
 //! enables the trainer to automatically adapt to different training
 //! dynamics without manual tuning.
 //!
+//! # Why Bandits for Phase Selection?
+//!
+//! Optimal prediction phase length depends on factors that change during
+//! training: model curvature, learning rate, loss landscape smoothness.
+//! Static schedules cannot adapt. Bandit algorithms provide:
+//! - **Online adaptation**: Learns from actual training outcomes
+//! - **Exploration/exploitation balance**: Tries new lengths while favoring proven ones
+//! - **Regret minimization**: Converges to optimal choices over time
+//!
 //! # Algorithm: `LinUCB`
 //!
 //! We use Linear Upper Confidence Bound (`LinUCB`) which:

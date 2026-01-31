@@ -4,6 +4,15 @@
 //! state of training at any point in time, along with utilities for encoding
 //! state into compact representations suitable for the dynamics predictor.
 //!
+//! # Why Track Training State?
+//!
+//! Accurate prediction of training dynamics requires rich context about the
+//! current training regime. By tracking loss and gradient histories along with
+//! optimizer statistics, the predictor can identify patterns like:
+//! - Learning rate warmup/decay phases
+//! - Loss plateau regions indicating convergence
+//! - Gradient magnitude trends signaling instability
+//!
 //! # Overview
 //!
 //! Training state encompasses:
@@ -37,6 +46,18 @@
 use serde::{Deserialize, Serialize};
 
 /// Exponential Moving Average tracker for multiple timescales.
+///
+/// Tracks fast (4-step), medium (16-step), and slow (64-step) EMAs to capture
+/// training dynamics at different temporal resolutions. The spread between
+/// fast and slow EMAs indicates momentum direction and magnitude.
+///
+/// # Why Multiple Timescales?
+///
+/// Training dynamics exhibit patterns at different frequencies. Short-term
+/// fluctuations (batch noise) are captured by the fast EMA, while longer-term
+/// trends (convergence, learning rate effects) appear in the slow EMA. The
+/// predictor uses these signals to distinguish transient noise from systematic
+/// changes in training behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiScaleEMA {
     fast: f32,
@@ -166,6 +187,13 @@ impl RunningStats {
 ///
 /// Provides O(1) insertion and maintains the most recent N values.
 /// Used for loss and gradient norm history.
+///
+/// # Why a Ring Buffer?
+///
+/// Training history needs bounded memory regardless of training duration.
+/// A ring buffer automatically evicts old values while preserving the most
+/// recent N observations, which are most relevant for dynamics prediction.
+/// The O(1) operations ensure minimal overhead per training step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RingBuffer<T, const N: usize> {
     buffer: Vec<T>,

@@ -4,6 +4,14 @@
 //! to compensate for systematic prediction errors. This maintains training
 //! quality without requiring full gradient computation.
 //!
+//! # Why Residual Correction?
+//!
+//! Predictions inevitably accumulate error over multiple steps. Rather than
+//! abandoning prediction when errors grow, residual correction:
+//! - **Extends prediction horizons**: Correct small errors instead of recomputing
+//! - **Learns bias patterns**: Systematic under/over-prediction is correctable
+//! - **Preserves speedup**: Correction is O(1) vs `O(backward_pass)` for recomputation
+//!
 //! # Correction Strategy
 //!
 //! 1. **Find similar states**: Locate past residuals from similar training conditions

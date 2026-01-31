@@ -4,6 +4,15 @@
 //! prediction divergence or training failure. Early detection allows for
 //! recovery actions before catastrophic failure (NaN, explosion).
 //!
+//! # Why Multi-Signal Detection?
+//!
+//! Single-metric thresholds (e.g., loss > X) produce many false positives due
+//! to natural training variance. By combining multiple signals—loss deviation,
+//! gradient norms, oscillation patterns—we achieve:
+//! - **Higher sensitivity**: Catch real problems earlier
+//! - **Fewer false alarms**: Correlated signals reduce noise
+//! - **Graceful degradation**: Partial signal loss doesn't blind detection
+//!
 //! # Monitored Signals
 //!
 //! - **Loss deviation**: Actual loss vs predicted or historical

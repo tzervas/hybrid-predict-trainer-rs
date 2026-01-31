@@ -162,9 +162,12 @@ pub use error::{HybridResult, HybridTrainingError, RecoveryAction};
 pub use phases::{Phase, PhaseController, PhaseDecision, PhaseOutcome};
 pub use state::TrainingState;
 
-use parking_lot::RwLock;
+// Standard library imports
 use std::sync::Arc;
 use std::time::Instant;
+
+// External crate imports
+use parking_lot::RwLock;
 
 /// Batch of training data.
 ///
@@ -192,6 +195,12 @@ pub struct GradientInfo {
 ///
 /// Models must implement forward pass, backward pass, and parameter access.
 /// The trainer will call these methods during different training phases.
+///
+/// # Why This Trait?
+///
+/// The hybrid trainer is framework-agnostic. By requiring only forward/backward
+/// and weight delta application, it works with any deep learning framework
+/// (Burn, Candle, tch-rs, etc.) that can implement these operations.
 ///
 /// # Type Parameters
 ///
@@ -252,6 +261,14 @@ pub trait Model<B: Batch>: Send + Sync {
 /// Trait for optimizers that update model parameters.
 ///
 /// Optimizers implement the parameter update rule (SGD, Adam, etc.).
+///
+/// # Why Separate from Model?
+///
+/// Optimizer state (momentum, variance estimates) is distinct from model
+/// parameters. Separating them allows:
+/// - **Swapping optimizers**: Try different optimizers without changing model code
+/// - **Independent serialization**: Save/load optimizer state separately
+/// - **Stateful updates**: Adam/AdaGrad need per-parameter state across steps
 ///
 /// # Example
 ///

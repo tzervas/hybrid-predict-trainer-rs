@@ -1,4 +1,18 @@
 //! GRU (Gated Recurrent Unit) implementation with forward pass and training.
+//!
+//! This module provides a lightweight GRU implementation for the RSSM-lite
+//! dynamics model. The GRU captures temporal dependencies in training dynamics,
+//! enabling accurate multi-step prediction.
+//!
+//! # Why GRU over LSTM?
+//!
+//! GRUs are chosen for their:
+//! - **Efficiency**: Fewer parameters than LSTM (2 gates vs 3)
+//! - **Comparable performance**: For our use case, GRU matches LSTM accuracy
+//! - **Simpler gradients**: Easier to train without vanishing gradients
+//!
+//! The gating mechanism allows the model to selectively remember or forget
+//! past training dynamics, which is crucial for adapting to phase transitions.
 
 use rand::Rng;
 
@@ -7,8 +21,15 @@ use rand::Rng;
 /// Implements the standard GRU equations:
 /// - z = `σ(W_z·x` + `U_z·h` + `b_z`)  [update gate]
 /// - r = `σ(W_r·x` + `U_r·h` + `b_r`)  [reset gate]
-/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  \[`candidate`\]
+/// - h̃ = `tanh(W_h·x` + `U_h·(r⊙h)` + `b_h`)  [candidate]
 /// - `h_new` = (1-z)⊙h + z⊙h̃  [new hidden state]
+///
+/// # Gate Purposes
+///
+/// - **Update gate (z)**: Controls how much of the new candidate state to use
+///   vs retaining the previous hidden state. High z = more updating.
+/// - **Reset gate (r)**: Controls how much of the previous hidden state to
+///   expose when computing the candidate. Low r = forget more history.
 pub struct GRUCell {
     /// Input dimension.
     pub input_dim: usize,

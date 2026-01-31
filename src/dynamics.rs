@@ -5,6 +5,15 @@
 //! combines deterministic (GRU-based) and stochastic components to capture
 //! both predictable trends and inherent uncertainty in training.
 //!
+//! # Why RSSM?
+//!
+//! Training dynamics are partially deterministic (gradient descent follows loss
+//! curvature) and partially stochastic (batch sampling, dropout). RSSM elegantly
+//! separates these:
+//! - **Deterministic path**: Captures reliable trends via GRU recurrence
+//! - **Stochastic path**: Models inherent variance via learned distributions
+//! - **Uncertainty estimates**: Ensemble disagreement quantifies prediction confidence
+//!
 //! # Architecture
 //!
 //! ```text
