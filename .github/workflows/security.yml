@@ -1,10 +1,14 @@
 name: Security
 
+# DISABLED: Run security checks locally to reduce GitHub Actions cost
+# To run locally: cargo audit && cargo deny check
+# Manual trigger available via workflow_dispatch
 on:
-  push:
-    branches: [main, staging]
-  schedule:
-    - cron: '0 0 * * 0'  # Weekly on Sunday
+  workflow_dispatch:
+  # push:
+  #   branches: [main, staging]
+  # schedule:
+  #   - cron: '0 0 * * 0'  # Weekly on Sunday
 
 permissions:
   contents: read

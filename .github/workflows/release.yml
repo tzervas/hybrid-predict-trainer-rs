@@ -1,8 +1,10 @@
 name: Release
 
+# DISABLED automatic tag trigger to reduce GitHub Actions cost
+# Manual release via workflow_dispatch only
 on:
-  push:
-    tags: ['v*']
+  # push:
+  #   tags: ['v*']
   workflow_dispatch:
     inputs:
       dry_run:

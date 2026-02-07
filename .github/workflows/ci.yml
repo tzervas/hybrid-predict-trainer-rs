@@ -1,8 +1,12 @@
 name: CI
 
+# DISABLED: Run CI locally instead to reduce GitHub Actions cost
+# To run locally: cargo test --all-features && cargo clippy --all-features
+# Manual trigger available via workflow_dispatch
 on:
-  push:
-    branches: [main, staging, dev]
+  workflow_dispatch:
+  # push:
+  #   branches: [main, staging, dev]
 
 env:
   CARGO_TERM_COLOR: always
