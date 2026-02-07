@@ -1,0 +1,77 @@
+warning: patch `candle-transformers v0.9.2 (https://github.com/tzervas/qlora-candle.git?branch=use-qlora-gemm#d390b484)` was not used in the crate graph
+help: Check that the patched package version and available features are compatible
+      with the dependency requirements. If the patch has a different version from
+      what is locked in the Cargo.lock file, run `cargo update` to use the new
+      version. This may also occur with an optional dependency that is not enabled.
+warning: unused variable: `config`
+   --> hybrid-predict-trainer-rs/src/predict_aware_memory.rs:421:42
+    |
+421 |     pub fn exit_predict_phase(&mut self, config: &PredictAwareMemoryConfig) {
+    |                                          ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `hybrid-predict-trainer-rs` (lib) generated 1 warning (run `cargo fix --lib -p hybrid-predict-trainer-rs` to apply 1 suggestion)
+warning: unused import: `Int`
+  --> hybrid-predict-trainer-rs/examples/gpt2_small_baseline.rs:20:32
+   |
+20 |     tensor::{backend::Backend, Int, Tensor, TensorData},
+   |                                ^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: use of deprecated function `rand::thread_rng`: Renamed to `rng`
+  --> hybrid-predict-trainer-rs/examples/gpt2_small_baseline.rs:41:25
+   |
+41 |     let mut rng = rand::thread_rng();
+   |                         ^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: use of deprecated method `rand::Rng::gen_range`: Renamed to `random_range`
+  --> hybrid-predict-trainer-rs/examples/gpt2_small_baseline.rs:45:22
+   |
+45 |         .map(|_| rng.gen_range(0..vocab_size as i64))
+   |                      ^^^^^^^^^
+
+warning: use of deprecated method `rand::Rng::gen_range`: Renamed to `random_range`
+  --> hybrid-predict-trainer-rs/examples/gpt2_small_baseline.rs:50:22
+   |
+50 |         .map(|_| rng.gen_range(0..vocab_size as i64))
+   |                      ^^^^^^^^^
+
+warning: unused import: `module::Module`
+  --> hybrid-predict-trainer-rs/examples/gpt2_small_baseline.rs:18:5
+   |
+18 |     module::Module as BurnModule,
+   |     ^^^^^^^^^^^^^^
+
+warning: `hybrid-predict-trainer-rs` (example "gpt2_small_baseline") generated 5 warnings (run `cargo fix --example "gpt2_small_baseline" -p hybrid-predict-trainer-rs` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 0.16s
+     Running `/home/kang/Documents/projects/rust-ai/target/release/examples/gpt2_small_baseline`
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 GPT-2 Small Baseline Training (Vanilla Burn)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Configuration:
+  Model: GPT-2 Small (124M params)
+  Vocab size: 50257
+  Embedding dim: 768
+  Layers: 12
+  Heads: 12
+  Batch size: 4
+  Sequence length: 64
+  Training steps: 100
+
+✓ Creating model...
+✓ Creating optimizer (Adam, lr=6e-4)...
+✓ Starting training...
+
+Step | Loss    | Perplexity | VRAM (MB) | Time (ms)
+-----|---------|------------|-----------|----------
+   0 | 450.64920 | 5181565888228256156174749013636565007741257869400280516519040442473616793415974612796769164835136488608833714665766126637932546612544330380935453283337739883381370082645859725175453055092640448512.0 |     244.0 |   8254.2
+  10 | 92.71011 | 18343719773192594249704942543798676750336.0 |     244.0 |  39835.5
+  20 | 76.02993 | 1045632584137642700469062988726272.0 |     244.0 |  38041.1
+  30 | 73.51584 | 84629747764341428097351128449024.0 |     244.0 |  35784.4
+  40 | 66.59482 | 83514527970648017063422984192.0 |     244.0 |  33397.3
+  50 | 60.83037 | 261995102315764371588907008.0 |     244.0 |  31007.3
