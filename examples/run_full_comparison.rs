@@ -79,13 +79,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load MNIST dataset
     println!("\n📦 Loading MNIST dataset...");
-    let dataset_source = DatasetSource::Remote {
-        url: "http://yann.lecun.com/exdb/mnist/".to_string(),
-        cache_dir: PathBuf::from("/data/datasets"),
-    };
 
-    let mnist = MnistDataset::load(dataset_source)
-        .map_err(|e| format!("Failed to load MNIST: {:?}", e))?;
+    // Try local first, then remote
+    let mnist = match MnistDataset::load(DatasetSource::Local(PathBuf::from("/data/datasets"))) {
+        Ok(dataset) => {
+            println!("   ✅ Loaded from local /data/datasets/mnist/");
+            dataset
+        }
+        Err(_) => {
+            println!("   ⚠️  Local files not found, trying remote download...");
+            println!("   Note: If download fails, manually place MNIST files in /data/datasets/mnist/");
+            println!("   Files needed: train-images-idx3-ubyte, train-labels-idx1-ubyte,");
+            println!("                t10k-images-idx3-ubyte, t10k-labels-idx1-ubyte");
+            println!();
+
+            // Try alternative mirror
+            MnistDataset::load(DatasetSource::Remote {
+                url: "https://ossci-datasets.s3.amazonaws.com/mnist/".to_string(),
+                cache_dir: PathBuf::from("/data/datasets"),
+            }).map_err(|e| {
+                format!(
+                    "Failed to load MNIST: {:?}\n\nTo use this example:\n\
+                    1. Download MNIST from http://yann.lecun.com/exdb/mnist/\n\
+                    2. Extract .gz files to /data/datasets/mnist/\n\
+                    3. Or use existing MNIST files if available",
+                    e
+                )
+            })?
+        }
+    };
 
     let (train_images, train_labels) = mnist.train_data();
     let (test_images, test_labels) = mnist.test_data();
@@ -242,15 +264,17 @@ fn run_traditional_training(
         let epoch_start = Instant::now();
 
         // Training
-        let (train_loss, batch_count) = train_epoch(
-            &mut model,
+        let (updated_model, train_loss, batch_count) = train_epoch(
+            model,
             &mut optim,
             train_images,
             train_labels,
             batch_size,
+            learning_rate,
             device,
         )?;
 
+        model = updated_model;
         total_backward_passes += batch_count;
 
         // Validation
@@ -348,15 +372,17 @@ fn run_hybrid_training(
 
 /// Trains model for one epoch.
 fn train_epoch<B: AutodiffBackend>(
-    model: &mut MnistCnn<B>,
-    optim: &mut impl Optimizer<MnistCnn<B>, B>,
+    model: MnistCnn<B>,
+    optim: &mut impl burn::optim::Optimizer<MnistCnn<B>, B>,
     images: &[Vec<f32>],
     labels: &[usize],
     batch_size: usize,
+    learning_rate: f64,
     device: &B::Device,
-) -> Result<(f64, usize), Box<dyn std::error::Error>> {
+) -> Result<(MnistCnn<B>, f64, usize), Box<dyn std::error::Error>> {
     let num_batches = (images.len() + batch_size - 1) / batch_size;
     let mut total_loss = 0.0;
+    let mut current_model = model;
 
     for i in 0..num_batches {
         let start_idx = i * batch_size;
@@ -368,18 +394,24 @@ fn train_epoch<B: AutodiffBackend>(
         let batch = MnistBatch::from_data(batch_images, batch_labels, device);
 
         // Forward pass
-        let (logits, loss) = model.forward_with_loss(batch.images, batch.targets);
+        let (logits, loss) = current_model.forward_with_loss(batch.images, batch.targets);
 
         // Backward pass
         let grads = loss.backward();
 
-        // Update weights
-        *model = optim.step(learning_rate, model.clone(), grads);
+        // Create gradient params
+        use burn::optim::GradientsParams;
+        let grads_params = GradientsParams::from_grads(grads, &current_model);
 
-        total_loss += loss.into_scalar() as f64;
+        // Update weights (consumes model, returns updated model)
+        current_model = optim.step(learning_rate, current_model, grads_params);
+
+        // Get loss value
+        use burn::tensor::ElementConversion;
+        total_loss += loss.into_scalar().elem::<f32>() as f64;
     }
 
-    Ok((total_loss / num_batches as f64, num_batches))
+    Ok((current_model, total_loss / num_batches as f64, num_batches))
 }
 
 /// Validates model.
@@ -390,6 +422,8 @@ fn validate<B: burn::tensor::backend::Backend>(
     batch_size: usize,
     device: &B::Device,
 ) -> Result<(f64, f64), Box<dyn std::error::Error>> {
+    use burn::tensor::ElementConversion;
+
     let num_batches = (images.len() + batch_size - 1) / batch_size;
     let mut total_loss = 0.0;
     let mut correct = 0;
@@ -410,10 +444,10 @@ fn validate<B: burn::tensor::backend::Backend>(
         // Compute loss
         use burn::nn::loss::CrossEntropyLossConfig;
         let loss = CrossEntropyLossConfig::new()
-            .init(&device)
-            .forward(logits.clone(), batch.targets);
+            .init(device)
+            .forward(logits.clone(), batch.targets.clone());
 
-        total_loss += loss.into_scalar() as f64;
+        total_loss += loss.into_scalar().elem::<f32>() as f64;
 
         // Compute accuracy
         let predictions = logits.argmax(1);
@@ -421,7 +455,10 @@ fn validate<B: burn::tensor::backend::Backend>(
         let preds_data = predictions.into_data();
 
         // Count correct predictions
-        for (pred, target) in preds_data.iter::<i64>().zip(targets_data.iter::<i64>()) {
+        let target_vec: Vec<i64> = targets_data.to_vec().unwrap();
+        let pred_vec: Vec<i64> = preds_data.to_vec().unwrap();
+
+        for (pred, target) in pred_vec.iter().zip(target_vec.iter()) {
             if pred == target {
                 correct += 1;
             }
