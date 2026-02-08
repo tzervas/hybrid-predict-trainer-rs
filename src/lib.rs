@@ -183,6 +183,7 @@ pub mod vram_manager;
 pub mod gradient_checkpointing;
 pub mod cpu_offloading;
 pub mod quantization;
+pub mod memory_profiler;
 
 // Reference model implementations for validation
 #[cfg(feature = "autodiff")]
