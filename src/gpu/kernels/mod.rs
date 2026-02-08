@@ -1,0 +1,63 @@
+//! CubeCL GPU kernel implementations.
+//!
+//! This module contains production GPU kernels extracted and adapted from unsloth-rs.
+
+#[cfg(feature = "cuda")]
+pub mod attention;
+
+#[cfg(feature = "cuda")]
+pub mod ternary;
+
+#[cfg(feature = "cuda")]
+pub mod common;
+
+#[cfg(feature = "cuda")]
+pub mod gru;
+
+#[cfg(feature = "cuda")]
+pub mod gru_burn;
+
+#[cfg(feature = "cuda")]
+pub mod gru_batched;
+
+#[cfg(feature = "cuda")]
+pub mod rssm_rollout;
+
+#[cfg(feature = "cuda")]
+pub mod state_encode;
+
+#[cfg(feature = "cuda")]
+pub mod gru_ensemble_batched;
+
+#[cfg(feature = "cuda")]
+pub mod fused_rssm;
+
+#[cfg(feature = "cuda")]
+pub use attention::*;
+
+#[cfg(feature = "cuda")]
+pub use ternary::*;
+
+#[cfg(feature = "cuda")]
+pub use common::*;
+
+#[cfg(feature = "cuda")]
+pub use gru::*;
+
+#[cfg(feature = "cuda")]
+pub use gru_burn::*;
+
+#[cfg(feature = "cuda")]
+pub use gru_batched::*;
+
+#[cfg(feature = "cuda")]
+pub use rssm_rollout::*;
+
+#[cfg(feature = "cuda")]
+pub use state_encode::*;
+
+#[cfg(feature = "cuda")]
+pub use gru_ensemble_batched::*;
+
+#[cfg(feature = "cuda")]
+pub use fused_rssm::*;
