@@ -182,6 +182,9 @@ pub mod vram_manager;
 // Dataset management for training comparisons
 pub mod dataset_manager;
 
+// Training comparison framework (hybrid vs traditional)
+pub mod training_comparison;
+
 // Rust AI ecosystem integration (GpuDispatchable trait)
 #[cfg(feature = "ecosystem")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ecosystem")))]
