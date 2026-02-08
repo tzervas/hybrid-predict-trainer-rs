@@ -185,6 +185,9 @@ pub mod dataset_manager;
 // Training comparison framework (hybrid vs traditional)
 pub mod training_comparison;
 
+// Training runners for traditional and hybrid methods
+pub mod training_runner;
+
 // Rust AI ecosystem integration (GpuDispatchable trait)
 #[cfg(feature = "ecosystem")]
 #[cfg_attr(docsrs, doc(cfg(feature = "ecosystem")))]

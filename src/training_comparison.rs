@@ -575,69 +575,52 @@ impl ComparisonRunner {
         Ok(comparison)
     }
 
-    /// Runs traditional training (placeholder).
+    /// Runs traditional training using simulation.
     fn run_traditional_training(&self) -> HybridResult<TrainingResults> {
-        let start = Instant::now();
+        use crate::training_runner::{RunnerConfig, TrainingRunner};
 
-        // TODO: Implement actual traditional training
-        // For now, return placeholder results
-
-        let results = TrainingResults {
+        let runner_config = RunnerConfig {
             method: TrainingMethod::Traditional,
-            config: self.config.clone(),
-            final_val_loss: 0.05,
-            final_test_loss: 0.06,
-            final_val_accuracy: 0.98,
-            total_time: start.elapsed(),
-            compute_time: start.elapsed(),
-            backward_pass_count: self.config.num_epochs * 1000, // Placeholder
-            peak_memory: Some(1_000_000_000),                   // 1 GB
-            avg_memory: Some(800_000_000),                      // 800 MB
-            train_loss_history: vec![0.5, 0.3, 0.2, 0.1, 0.05],
-            val_loss_history: vec![0.6, 0.35, 0.25, 0.15, 0.05],
-            val_acc_history: vec![0.8, 0.9, 0.94, 0.97, 0.98],
-            phase_stats: None,
-            completed_at: chrono::Utc::now().to_rfc3339(),
+            num_epochs: self.config.num_epochs,
+            batch_size: self.config.batch_size,
+            learning_rate: self.config.learning_rate,
+            random_seed: self.config.random_seed,
+            hybrid_config: None,
+            val_frequency: 1,
+            track_memory: true,
+            use_gpu: cfg!(feature = "cuda"),
         };
+
+        let mut runner = TrainingRunner::new(runner_config)?;
+        let mut results = runner.simulate_traditional_training()?;
+
+        // Update config reference
+        results.config = self.config.clone();
 
         Ok(results)
     }
 
-    /// Runs hybrid training (placeholder).
+    /// Runs hybrid training using simulation.
     fn run_hybrid_training(&self) -> HybridResult<TrainingResults> {
-        let start = Instant::now();
+        use crate::training_runner::{RunnerConfig, TrainingRunner};
 
-        // TODO: Implement actual hybrid training
-        // For now, return placeholder results showing speedup
-
-        let backward_count = (self.config.num_epochs * 1000) / 4; // 75% reduction
-
-        let results = TrainingResults {
+        let runner_config = RunnerConfig {
             method: TrainingMethod::Hybrid,
-            config: self.config.clone(),
-            final_val_loss: 0.051,  // Slightly higher
-            final_test_loss: 0.061, // Slightly higher
-            final_val_accuracy: 0.979, // Slightly lower
-            total_time: Duration::from_secs_f64(start.elapsed().as_secs_f64() * 0.25), // 4× faster
-            compute_time: Duration::from_secs_f64(start.elapsed().as_secs_f64() * 0.25),
-            backward_pass_count: backward_count,
-            peak_memory: Some(900_000_000),  // 900 MB
-            avg_memory: Some(700_000_000),   // 700 MB
-            train_loss_history: vec![0.5, 0.3, 0.2, 0.1, 0.051],
-            val_loss_history: vec![0.6, 0.35, 0.25, 0.15, 0.051],
-            val_acc_history: vec![0.8, 0.9, 0.94, 0.97, 0.979],
-            phase_stats: Some(PhaseStatistics {
-                warmup_time: Duration::from_secs(10),
-                full_train_time: Duration::from_secs(30),
-                predict_time: Duration::from_secs(50),
-                correct_time: Duration::from_secs(10),
-                phase_transitions: 20,
-                divergence_count: 0,
-                avg_prediction_confidence: 0.85,
-                backward_reduction_pct: 75.0,
-            }),
-            completed_at: chrono::Utc::now().to_rfc3339(),
+            num_epochs: self.config.num_epochs,
+            batch_size: self.config.batch_size,
+            learning_rate: self.config.learning_rate,
+            random_seed: self.config.random_seed,
+            hybrid_config: Some(self.config.hybrid_config.clone()),
+            val_frequency: 1,
+            track_memory: true,
+            use_gpu: cfg!(feature = "cuda"),
         };
+
+        let mut runner = TrainingRunner::new(runner_config)?;
+        let mut results = runner.simulate_hybrid_training()?;
+
+        // Update config reference
+        results.config = self.config.clone();
 
         Ok(results)
     }
