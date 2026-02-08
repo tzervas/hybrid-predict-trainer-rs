@@ -46,6 +46,9 @@
 
 pub mod mnist;
 
+#[cfg(feature = "datasets")]
+pub mod parquet_stream;
+
 use crate::error::{HybridResult, HybridTrainingError};
 use std::path::PathBuf;
 

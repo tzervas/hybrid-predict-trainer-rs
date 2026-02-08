@@ -66,6 +66,7 @@ rand_distr = { workspace = true }
 # HTTP and compression for dataset loading
 ureq = { version = "2.10", optional = true }
 flate2 = { version = "1.0", optional = true }
+parquet = { version = "53.3", optional = true }
 
 [dev-dependencies]
 # Use default-features = false to avoid plotters -> web-sys -> js-sys conflict with uuid
@@ -96,7 +97,7 @@ ecosystem = ["rust-ai-core", "candle-core"]
 async = ["tokio"]
 
 # Dataset loading support
-datasets = ["ureq", "flate2"]
+datasets = ["ureq", "flate2", "parquet"]
 
 # Full feature set
 full = ["std", "autodiff", "ndarray", "cuda", "candle", "async", "datasets"]

@@ -16,7 +16,8 @@ use hybrid_predict_trainer_rs::state::WeightDelta;
 /// Mock batch implementing the Batch trait.
 #[derive(Debug, Clone)]
 struct MockBatch {
-    /// Simulated input data
+    /// Simulated input data (unused in mock, but demonstrates real batch structure)
+    #[allow(dead_code)]
     data: Vec<f32>,
     /// Batch size
     size: usize,
@@ -147,7 +148,8 @@ where
         let avg_grad = gradients.gradient_norm / model.parameter_count() as f32;
         for i in 0..model.parameter_count().min(self.momentum.len()) {
             self.momentum[i] = self.beta1 * self.momentum[i] + (1.0 - self.beta1) * avg_grad;
-            self.variance[i] = self.beta2 * self.variance[i] + (1.0 - self.beta2) * avg_grad * avg_grad;
+            self.variance[i] =
+                self.beta2 * self.variance[i] + (1.0 - self.beta2) * avg_grad * avg_grad;
         }
 
         Ok(())
@@ -171,20 +173,36 @@ fn main() -> HybridResult<()> {
     println!("║         Hybrid Predictive Training - Full Example            ║");
     println!("╚═══════════════════════════════════════════════════════════════╝\n");
 
-    // Build configuration
+    // Build configuration with auto-tuning enabled
+    let num_steps = 200;
+    let auto_tuning_config = hybrid_predict_trainer_rs::auto_tuning::AutoTuningConfig::default();
+
     let config = HybridTrainerConfig::builder()
-        .warmup_steps(50)        // Shorter warmup for demo
-        .full_steps(10)          // Full training steps per cycle
-        .max_predict_steps(30)   // Max prediction steps
+        .warmup_steps(50) // Shorter warmup for demo
+        .full_steps(10) // Full training steps per cycle
+        .max_predict_steps(30) // Max prediction steps
         .confidence_threshold(0.80) // Lower threshold for demo
-        .collect_metrics(true)    // Enable metrics
+        .collect_metrics(true) // Enable metrics
+        .auto_tuning(auto_tuning_config) // Enable auto-tuning
+        .max_steps(num_steps) // Total training steps for progress calculation
         .build();
 
     println!("📋 Configuration:");
     println!("   Warmup steps:         {}", config.warmup_steps);
     println!("   Full steps per cycle: {}", config.full_steps);
     println!("   Max predict steps:    {}", config.max_predict_steps);
-    println!("   Confidence threshold: {:.2}", config.confidence_threshold);
+    println!(
+        "   Confidence threshold: {:.2}",
+        config.confidence_threshold
+    );
+    println!(
+        "   Auto-tuning:          {}",
+        if config.auto_tuning_config.is_some() {
+            "Enabled"
+        } else {
+            "Disabled"
+        }
+    );
     println!();
 
     // Validate configuration
@@ -206,8 +224,6 @@ fn main() -> HybridResult<()> {
     println!("┌──────┬──────────┬─────────┬───────────┬────────┬───────────┐");
     println!("│ Step │  Phase   │  Loss   │ Predicted │  Conf  │  Time(ms) │");
     println!("├──────┼──────────┼─────────┼───────────┼────────┼───────────┤");
-
-    let num_steps = 200;
     let mut phase_transitions = Vec::new();
     let mut last_phase = Phase::Warmup;
 
@@ -235,6 +251,25 @@ fn main() -> HybridResult<()> {
                         result.confidence,
                         result.step_time_ms
                     );
+
+                    // Show auto-tuning recommendations every 50 steps
+                    if step % 50 == 0 {
+                        if let Some(update) = trainer.last_auto_tuning_update() {
+                            println!(
+                                "│ 🔧 Auto-tuning: Health={:?}, Score={:.2}, Plateau={:?}",
+                                update.health, update.health_score, update.plateau_status
+                            );
+                            if update.should_restart() {
+                                println!(
+                                    "│    Warmup restart recommended (LR x{:.2})",
+                                    update.warmup_restart.unwrap()
+                                );
+                            }
+                            if !update.recommendations.is_empty() {
+                                println!("│    Recommendations: {:?}", update.recommendations);
+                            }
+                        }
+                    }
                 }
             }
             Err((error, recovery_action)) => {
@@ -263,7 +298,8 @@ fn main() -> HybridResult<()> {
     let stats = trainer.statistics();
     println!("📈 Training Statistics:");
     println!("   Total steps:        {}", stats.total_steps);
-    println!("   Predicted steps:    {} ({:.1}%)",
+    println!(
+        "   Predicted steps:    {} ({:.1}%)",
         stats.predict_steps,
         stats.predict_steps as f32 / stats.total_steps.max(1) as f32 * 100.0
     );
@@ -271,7 +307,10 @@ fn main() -> HybridResult<()> {
     println!("   Warmup steps:       {}", stats.warmup_steps);
     println!("   Correct steps:      {}", stats.correct_steps);
     println!("   Final loss:         {:.4}", stats.final_loss);
-    println!("   Backward reduction: {:.1}%", stats.backward_reduction_pct);
+    println!(
+        "   Backward reduction: {:.1}%",
+        stats.backward_reduction_pct
+    );
     println!("   Average conf:       {:.2}", stats.avg_confidence);
 
     // Calculate speedup

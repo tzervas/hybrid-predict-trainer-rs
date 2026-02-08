@@ -4,6 +4,15 @@
 //! state of training at any point in time, along with utilities for encoding
 //! state into compact representations suitable for the dynamics predictor.
 //!
+//! # Why Track Training State?
+//!
+//! Accurate prediction of training dynamics requires rich context about the
+//! current training regime. By tracking loss and gradient histories along with
+//! optimizer statistics, the predictor can identify patterns like:
+//! - Learning rate warmup/decay phases
+//! - Loss plateau regions indicating convergence
+//! - Gradient magnitude trends signaling instability
+//!
 //! # Overview
 //!
 //! Training state encompasses:
@@ -37,6 +46,18 @@
 use serde::{Deserialize, Serialize};
 
 /// Exponential Moving Average tracker for multiple timescales.
+///
+/// Tracks fast (4-step), medium (16-step), and slow (64-step) EMAs to capture
+/// training dynamics at different temporal resolutions. The spread between
+/// fast and slow EMAs indicates momentum direction and magnitude.
+///
+/// # Why Multiple Timescales?
+///
+/// Training dynamics exhibit patterns at different frequencies. Short-term
+/// fluctuations (batch noise) are captured by the fast EMA, while longer-term
+/// trends (convergence, learning rate effects) appear in the slow EMA. The
+/// predictor uses these signals to distinguish transient noise from systematic
+/// changes in training behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MultiScaleEMA {
     fast: f32,
@@ -46,20 +67,29 @@ pub struct MultiScaleEMA {
 }
 
 impl Default for MultiScaleEMA {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MultiScaleEMA {
     /// Creates a new multi-scale EMA with zeroed initial values.
     #[must_use]
     pub fn new() -> Self {
-        Self { fast: 0.0, medium: 0.0, slow: 0.0, count: 0 }
+        Self {
+            fast: 0.0,
+            medium: 0.0,
+            slow: 0.0,
+            count: 0,
+        }
     }
     /// Updates all EMA scales with a new value.
     pub fn update(&mut self, value: f32) {
         self.count += 1;
         if self.count == 1 {
-            self.fast = value; self.medium = value; self.slow = value;
+            self.fast = value;
+            self.medium = value;
+            self.slow = value;
         } else {
             self.fast = 0.75 * self.fast + 0.25 * value;
             self.medium = 0.9375 * self.medium + 0.0625 * value;
@@ -68,19 +98,29 @@ impl MultiScaleEMA {
     }
     /// Returns the fast EMA value.
     #[must_use]
-    pub fn fast(&self) -> f32 { self.fast }
+    pub fn fast(&self) -> f32 {
+        self.fast
+    }
     /// Returns the medium EMA value.
     #[must_use]
-    pub fn medium(&self) -> f32 { self.medium }
+    pub fn medium(&self) -> f32 {
+        self.medium
+    }
     /// Returns the slow EMA value.
     #[must_use]
-    pub fn slow(&self) -> f32 { self.slow }
+    pub fn slow(&self) -> f32 {
+        self.slow
+    }
     /// Returns the spread between fast and slow EMAs.
     #[must_use]
-    pub fn spread(&self) -> f32 { self.fast - self.slow }
+    pub fn spread(&self) -> f32 {
+        self.fast - self.slow
+    }
     /// Returns whether the EMA has sufficient samples to be reliable.
     #[must_use]
-    pub fn is_warm(&self) -> bool { self.count >= 16 }
+    pub fn is_warm(&self) -> bool {
+        self.count >= 16
+    }
 }
 
 /// Running statistics for online feature normalization.
@@ -92,14 +132,20 @@ pub struct RunningStats {
 }
 
 impl Default for RunningStats {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RunningStats {
     /// Creates a new running statistics tracker.
     #[must_use]
     pub fn new() -> Self {
-        Self { mean: 0.0, variance: 0.0, count: 0 }
+        Self {
+            mean: 0.0,
+            variance: 0.0,
+            count: 0,
+        }
     }
     /// Updates the statistics with a new value.
     pub fn update(&mut self, value: f64) {
@@ -112,28 +158,42 @@ impl RunningStats {
     /// Normalizes a value using the running mean and standard deviation.
     #[must_use]
     pub fn normalize(&self, value: f64) -> f32 {
-        if self.count < 2 { return 0.0; }
+        if self.count < 2 {
+            return 0.0;
+        }
         let std_dev = (self.variance / self.count as f64).sqrt();
-        if std_dev < 1e-8 { return 0.0; }
+        if std_dev < 1e-8 {
+            return 0.0;
+        }
         let normalized = (value - self.mean) / std_dev;
         normalized.clamp(-10.0, 10.0) as f32
     }
     /// Returns the current running mean.
     #[must_use]
-    pub fn mean(&self) -> f64 { self.mean }
+    pub fn mean(&self) -> f64 {
+        self.mean
+    }
     /// Returns the current standard deviation.
     #[must_use]
     pub fn std_dev(&self) -> f64 {
-        if self.count < 2 { return 0.0; }
+        if self.count < 2 {
+            return 0.0;
+        }
         (self.variance / self.count as f64).sqrt()
     }
 }
-
 
 /// Fixed-size ring buffer for history tracking.
 ///
 /// Provides O(1) insertion and maintains the most recent N values.
 /// Used for loss and gradient norm history.
+///
+/// # Why a Ring Buffer?
+///
+/// Training history needs bounded memory regardless of training duration.
+/// A ring buffer automatically evicts old values while preserving the most
+/// recent N observations, which are most relevant for dynamics prediction.
+/// The O(1) operations ensure minimal overhead per training step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RingBuffer<T, const N: usize> {
     buffer: Vec<T>,
@@ -149,7 +209,7 @@ impl<T: Clone + Default, const N: usize> Default for RingBuffer<T, N> {
 
 impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
     /// Creates a new empty ring buffer.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             buffer: vec![T::default(); N],
@@ -157,7 +217,7 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
             len: 0,
         }
     }
-    
+
     /// Pushes a value into the buffer, overwriting the oldest if full.
     pub fn push(&mut self, value: T) {
         self.buffer[self.head] = value;
@@ -166,19 +226,19 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
             self.len += 1;
         }
     }
-    
+
     /// Returns the number of values in the buffer.
-    #[must_use] 
+    #[must_use]
     pub fn len(&self) -> usize {
         self.len
     }
-    
+
     /// Returns whether the buffer is empty.
-    #[must_use] 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
-    
+
     /// Returns an iterator over values in chronological order (oldest first).
     pub fn iter(&self) -> impl Iterator<Item = &T> {
         let start = if self.len < N { 0 } else { self.head };
@@ -186,20 +246,24 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
         let buffer = &self.buffer;
         (0..len).map(move |i| &buffer[(start + i) % N])
     }
-    
+
     /// Returns an iterator over values in reverse chronological order (newest first).
     pub fn iter_rev(&self) -> impl Iterator<Item = &T> {
         let len = self.len;
         let buffer = &self.buffer;
         let head = self.head;
         (0..len).map(move |i| {
-            let idx = if head == 0 { N - 1 - i } else { (head + N - 1 - i) % N };
+            let idx = if head == 0 {
+                N - 1 - i
+            } else {
+                (head + N - 1 - i) % N
+            };
             &buffer[idx]
         })
     }
-    
+
     /// Returns the most recent value, if any.
-    #[must_use] 
+    #[must_use]
     pub fn last(&self) -> Option<&T> {
         if self.len == 0 {
             None
@@ -208,7 +272,7 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
             Some(&self.buffer[idx])
         }
     }
-    
+
     /// Returns statistics (mean, std, min, max) for numeric buffers.
     pub fn statistics(&self) -> BufferStatistics
     where
@@ -217,7 +281,7 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
         if self.is_empty() {
             return BufferStatistics::default();
         }
-        
+
         let values: Vec<f64> = self.iter().map(|&v| v.into()).collect();
         let n = values.len() as f64;
         let mean = values.iter().sum::<f64>() / n;
@@ -225,8 +289,13 @@ impl<T: Clone + Default, const N: usize> RingBuffer<T, N> {
         let std = variance.sqrt();
         let min = values.iter().copied().fold(f64::INFINITY, f64::min);
         let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-        
-        BufferStatistics { mean, std, min, max }
+
+        BufferStatistics {
+            mean,
+            std,
+            min,
+            max,
+        }
     }
 }
 
@@ -312,10 +381,10 @@ pub struct LayerKFACFactor {
 pub struct TrainingState {
     /// Current training step (0-indexed).
     pub step: u64,
-    
+
     /// Current loss value.
     pub loss: f32,
-    
+
     /// History of recent loss values.
     pub loss_history: RingBuffer<f32, 256>,
 
@@ -327,29 +396,35 @@ pub struct TrainingState {
 
     /// Current gradient norm.
     pub gradient_norm: f32,
-    
+
     /// History of recent gradient norms.
     pub gradient_norm_history: RingBuffer<f32, 64>,
-    
+
     /// Checksum for detecting unexpected weight changes.
     ///
     /// Computed as a hash of sampled weight values for efficiency.
     pub weight_checksum: u64,
-    
+
     /// Summary of optimizer internal state.
     pub optimizer_state_summary: OptimizerStateSummary,
-    
+
     /// K-FAC factors for structured prediction (optional).
     ///
     /// Only populated if K-FAC encoding is enabled in configuration.
     pub kfac_factors: Option<KFACFactors>,
-    
+
     /// Current phase within the training cycle.
     pub current_phase: crate::Phase,
-    
+
     /// Step within the current phase.
     pub phase_step: usize,
-    
+
+    /// Steps completed in current prediction phase (reset on phase transition).
+    ///
+    /// Used to track when to apply intra-horizon micro-corrections during
+    /// long prediction phases.
+    pub steps_in_current_phase: usize,
+
     /// Random state for reproducibility.
     pub random_seed: u64,
 }
@@ -362,7 +437,7 @@ impl Default for TrainingState {
 
 impl TrainingState {
     /// Creates a new training state at step 0.
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             step: 0,
@@ -377,10 +452,11 @@ impl TrainingState {
             kfac_factors: None,
             current_phase: crate::Phase::Warmup,
             phase_step: 0,
+            steps_in_current_phase: 0,
             random_seed: 0,
         }
     }
-    
+
     /// Records metrics from a training step.
     ///
     /// # Arguments
@@ -396,7 +472,7 @@ impl TrainingState {
         self.gradient_norm_history.push(gradient_norm);
         self.phase_step += 1;
     }
-    
+
     /// Transitions to a new phase.
     ///
     /// # Arguments
@@ -405,20 +481,21 @@ impl TrainingState {
     pub fn enter_phase(&mut self, phase: crate::Phase) {
         self.current_phase = phase;
         self.phase_step = 0;
+        self.steps_in_current_phase = 0;
     }
-    
+
     /// Returns statistics about recent loss values.
-    #[must_use] 
+    #[must_use]
     pub fn loss_statistics(&self) -> BufferStatistics {
         self.loss_history.statistics()
     }
-    
+
     /// Returns statistics about recent gradient norms.
-    #[must_use] 
+    #[must_use]
     pub fn gradient_statistics(&self) -> BufferStatistics {
         self.gradient_norm_history.statistics()
     }
-    
+
     /// Checks if loss is within expected bounds.
     ///
     /// # Arguments
@@ -428,14 +505,14 @@ impl TrainingState {
     /// # Returns
     ///
     /// `true` if loss is within `mean ± sigma_threshold * std`.
-    #[must_use] 
+    #[must_use]
     pub fn loss_within_bounds(&self, sigma_threshold: f32) -> bool {
         let stats = self.loss_statistics();
         let bound = stats.std * f64::from(sigma_threshold);
         let deviation = (f64::from(self.loss) - stats.mean).abs();
         deviation <= bound
     }
-    
+
     /// Computes a feature vector for state encoding.
     ///
     /// Returns a fixed-size vector of features derived from the training
@@ -444,10 +521,10 @@ impl TrainingState {
     /// # Returns
     ///
     /// A vector of f32 features with length determined by the feature set.
-    #[must_use] 
+    #[must_use]
     pub fn compute_features(&self) -> Vec<f32> {
         let mut features = Vec::with_capacity(64);
-        
+
         // Loss features (8)
         let loss_stats = self.loss_statistics();
         features.push(self.loss);
@@ -470,7 +547,7 @@ impl TrainingState {
             features.push(1.0);
         }
         features.push(self.step as f32 / 10000.0); // Normalized step
-        
+
         // Gradient features (8)
         let grad_stats = self.gradient_statistics();
         features.push(self.gradient_norm);
@@ -481,7 +558,7 @@ impl TrainingState {
         features.push(self.gradient_norm.log10().max(-10.0)); // Log scale
         features.push((self.gradient_norm / grad_stats.mean.max(1e-8) as f32).min(10.0)); // Relative
         features.push(grad_stats.std as f32 / grad_stats.mean.max(1e-8) as f32); // CV
-        
+
         // Optimizer features (8)
         features.push(self.optimizer_state_summary.momentum_mean);
         features.push(self.optimizer_state_summary.momentum_std);
@@ -491,7 +568,7 @@ impl TrainingState {
         features.push(self.optimizer_state_summary.beta1_power);
         features.push(self.optimizer_state_summary.beta2_power);
         features.push(0.0); // Reserved
-        
+
         // Phase features (8)
         features.push(match self.current_phase {
             crate::Phase::Warmup => 0.0,
@@ -504,7 +581,7 @@ impl TrainingState {
         while features.len() < 64 {
             features.push(0.0);
         }
-        
+
         features
     }
 }
@@ -516,7 +593,7 @@ impl TrainingState {
 pub trait StateEncoder: Send + Sync {
     /// The encoded state type.
     type EncodedState: Clone + Send;
-    
+
     /// Encodes the training state into a compact representation.
     ///
     /// # Arguments
@@ -527,7 +604,7 @@ pub trait StateEncoder: Send + Sync {
     ///
     /// The encoded state representation.
     fn encode(&self, state: &TrainingState) -> Self::EncodedState;
-    
+
     /// Decodes a predicted state delta back to weight changes.
     ///
     /// # Arguments
@@ -538,7 +615,7 @@ pub trait StateEncoder: Send + Sync {
     ///
     /// The decoded weight delta.
     fn decode_delta(&self, encoded_delta: &Self::EncodedState) -> WeightDelta;
-    
+
     /// Returns the dimension of the encoded state.
     fn encoding_dim(&self) -> usize;
 }
@@ -551,10 +628,10 @@ pub trait StateEncoder: Send + Sync {
 pub struct WeightDelta {
     /// Per-parameter deltas, keyed by parameter name.
     pub deltas: std::collections::HashMap<String, Vec<f32>>,
-    
+
     /// Global scale factor for all deltas.
     pub scale: f32,
-    
+
     /// Metadata about the delta computation.
     pub metadata: WeightDeltaMetadata,
 }
@@ -574,7 +651,7 @@ pub struct WeightDeltaMetadata {
 
 impl WeightDelta {
     /// Creates a new empty weight delta.
-    #[must_use] 
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             deltas: std::collections::HashMap::new(),
@@ -582,9 +659,9 @@ impl WeightDelta {
             metadata: WeightDeltaMetadata::default(),
         }
     }
-    
+
     /// Creates a weight delta with the given per-parameter deltas.
-    #[must_use] 
+    #[must_use]
     pub fn new(deltas: std::collections::HashMap<String, Vec<f32>>) -> Self {
         Self {
             deltas,
@@ -592,7 +669,7 @@ impl WeightDelta {
             metadata: WeightDeltaMetadata::default(),
         }
     }
-    
+
     /// Scales all deltas by the given factor.
     pub fn scale_by(&mut self, factor: f32) {
         self.scale *= factor;
@@ -606,7 +683,7 @@ impl WeightDelta {
     /// # Arguments
     ///
     /// * `scale` - The scale factor for the delta
-    #[must_use] 
+    #[must_use]
     pub fn scaled_identity(scale: f32) -> Self {
         Self {
             deltas: std::collections::HashMap::new(),
@@ -636,7 +713,7 @@ impl LinearStateEncoder {
     /// # Arguments
     ///
     /// * `latent_dim` - Dimension of the encoded state
-    #[must_use] 
+    #[must_use]
     pub fn new(latent_dim: usize) -> Self {
         Self {
             _feature_dim: 32, // From TrainingState::compute_features
@@ -647,7 +724,7 @@ impl LinearStateEncoder {
 
 impl StateEncoder for LinearStateEncoder {
     type EncodedState = Vec<f32>;
-    
+
     fn encode(&self, state: &TrainingState) -> Self::EncodedState {
         // Placeholder: just return features padded/truncated to latent_dim
         let features = state.compute_features();
@@ -659,12 +736,12 @@ impl StateEncoder for LinearStateEncoder {
         }
         encoded
     }
-    
+
     fn decode_delta(&self, _encoded_delta: &Self::EncodedState) -> WeightDelta {
         // Placeholder implementation
         WeightDelta::empty()
     }
-    
+
     fn encoding_dim(&self) -> usize {
         self.latent_dim
     }
@@ -680,7 +757,7 @@ mod tests {
         buf.push(1.0);
         buf.push(2.0);
         buf.push(3.0);
-        
+
         let values: Vec<f32> = buf.iter().cloned().collect();
         assert_eq!(values, vec![1.0, 2.0, 3.0]);
     }
@@ -692,7 +769,7 @@ mod tests {
         buf.push(2);
         buf.push(3);
         buf.push(4); // Overwrites 1
-        
+
         let values: Vec<i32> = buf.iter().cloned().collect();
         assert_eq!(values, vec![2, 3, 4]);
     }
@@ -702,7 +779,7 @@ mod tests {
         let mut state = TrainingState::new();
         state.record_step(2.5, 1.0);
         state.record_step(2.3, 0.9);
-        
+
         assert_eq!(state.step, 2);
         assert!((state.loss - 2.3).abs() < f32::EPSILON);
         assert_eq!(state.loss_history.len(), 2);
@@ -713,7 +790,7 @@ mod tests {
         let mut state = TrainingState::new();
         state.record_step(2.5, 1.0);
         state.record_step(2.3, 0.9);
-        
+
         let features = state.compute_features();
         assert!(features.len() >= 32);
     }
@@ -723,21 +800,27 @@ mod tests {
         let mut ema = MultiScaleEMA::new();
         ema.update(2.0);
         assert_eq!(ema.fast(), 2.0);
-        for _ in 0..20 { ema.update(1.0); }
+        for _ in 0..20 {
+            ema.update(1.0);
+        }
         assert!(ema.is_warm());
     }
 
     #[test]
     fn test_running_stats() {
         let mut stats = RunningStats::new();
-        for i in 1..=5 { stats.update(i as f64); }
+        for i in 1..=5 {
+            stats.update(i as f64);
+        }
         assert!((stats.mean() - 3.0).abs() < 1e-6);
     }
 
     #[test]
     fn test_enhanced_features_64() {
         let mut state = TrainingState::new();
-        for i in 0..50 { state.record_step(2.0 - i as f32 * 0.01, 1.0); }
+        for i in 0..50 {
+            state.record_step(2.0 - i as f32 * 0.01, 1.0);
+        }
         let features = state.compute_features();
         assert_eq!(features.len(), 64);
     }

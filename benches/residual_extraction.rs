@@ -21,7 +21,7 @@ fn create_test_residual(step: u64) -> Residual {
 
 fn benchmark_residual_store_add(c: &mut Criterion) {
     let mut store = ResidualStore::new(1000);
-    
+
     c.bench_function("residual_store_add", |b| {
         let mut step = 0u64;
         b.iter(|| {
@@ -33,27 +33,23 @@ fn benchmark_residual_store_add(c: &mut Criterion) {
 
 fn benchmark_residual_store_find_similar(c: &mut Criterion) {
     let mut store = ResidualStore::new(1000);
-    
+
     // Populate store
     for i in 0..1000 {
         store.add(create_test_residual(i));
     }
-    
+
     let mut state = TrainingState::new();
     for i in 0..50 {
         state.record_step(2.5 - i as f32 * 0.01, 1.0);
     }
-    
+
     c.bench_function("residual_find_similar_10", |b| {
-        b.iter(|| {
-            black_box(store.find_similar(black_box(&state), 10))
-        })
+        b.iter(|| black_box(store.find_similar(black_box(&state), 10)))
     });
-    
+
     c.bench_function("residual_find_similar_50", |b| {
-        b.iter(|| {
-            black_box(store.find_similar(black_box(&state), 50))
-        })
+        b.iter(|| black_box(store.find_similar(black_box(&state), 50)))
     });
 }
 
