@@ -1,7 +1,7 @@
-//! GPU acceleration kernels via CubeCL and Burn.
+//! GPU acceleration kernels via `CubeCL` and Burn.
 //!
 //! This module provides GPU-accelerated implementations of performance-critical
-//! operations using CubeCL for custom CUDA kernels and Burn for tensor operations.
+//! operations using `CubeCL` for custom CUDA kernels and Burn for tensor operations.
 //!
 //! # Accelerated Operations
 //!
@@ -13,7 +13,7 @@
 //! # Backend Support
 //!
 //! - CUDA (primary target)
-//! - Future: Metal, Vulkan via CubeCL backends
+//! - Future: Metal, Vulkan via `CubeCL` backends
 //!
 //! # Usage
 //!
@@ -24,19 +24,19 @@
 //! let encoded = accelerator.encode_state(&state)?;
 //! ```
 
-#![cfg(feature = "cuda")]
-
 use crate::error::{HybridResult, HybridTrainingError};
 use crate::state::TrainingState;
+
+pub mod persistent_state;
 
 /// Marker trait for GPU backend implementations.
 pub trait GpuBackend: Send + Sync {
     /// Returns the backend name.
     fn name() -> &'static str;
-    
+
     /// Returns whether this backend is available.
     fn is_available() -> bool;
-    
+
     /// Returns device information.
     fn device_info() -> DeviceInfo;
 }
@@ -46,16 +46,16 @@ pub trait GpuBackend: Send + Sync {
 pub struct DeviceInfo {
     /// Device name.
     pub name: String,
-    
+
     /// Total memory in bytes.
     pub total_memory: usize,
-    
+
     /// Available memory in bytes.
     pub available_memory: usize,
-    
+
     /// Compute capability (for CUDA).
     pub compute_capability: Option<(u32, u32)>,
-    
+
     /// Number of streaming multiprocessors.
     pub num_sms: Option<u32>,
 }
@@ -79,13 +79,13 @@ impl GpuBackend for CudaBackend {
     fn name() -> &'static str {
         "CUDA"
     }
-    
+
     fn is_available() -> bool {
         // Check CUDA availability via CubeCL
         // This is a placeholder - actual implementation would use cubecl-cuda
         cfg!(feature = "cuda")
     }
-    
+
     fn device_info() -> DeviceInfo {
         // Query device info via CUDA driver API
         // Placeholder implementation
@@ -100,10 +100,10 @@ impl GpuBackend for CudaBackend {
 pub struct GpuAccelerator<B: GpuBackend> {
     /// Device information.
     device_info: DeviceInfo,
-    
+
     /// Memory pool for temporary allocations.
     memory_pool: MemoryPool,
-    
+
     /// Phantom marker for backend type.
     _backend: std::marker::PhantomData<B>,
 }
@@ -123,22 +123,23 @@ impl<B: GpuBackend> GpuAccelerator<B> {
                 None,
             ));
         }
-        
+
         let device_info = B::device_info();
         let memory_pool = MemoryPool::new(device_info.available_memory / 4);
-        
+
         Ok(Self {
             device_info,
             memory_pool,
             _backend: std::marker::PhantomData,
         })
     }
-    
+
     /// Returns device information.
+    #[must_use]
     pub fn device_info(&self) -> &DeviceInfo {
         &self.device_info
     }
-    
+
     /// Encodes training state to GPU tensor.
     ///
     /// Performs parallel feature extraction on the GPU.
@@ -147,13 +148,16 @@ impl<B: GpuBackend> GpuAccelerator<B> {
         // 1. Transfer state data to GPU
         // 2. Launch parallel feature extraction kernel
         // 3. Return encoded tensor
+        //
+        // FIXED: Output shape should be 64 (not 32) to match
+        // TrainingState::compute_features() output dimension
         Ok(GpuTensor {
             data: Vec::new(),
-            shape: vec![32],
+            shape: vec![64],
             device: B::name().to_string(),
         })
     }
-    
+
     /// Performs batched dynamics prediction on GPU.
     pub fn predict_batch(
         &self,
@@ -166,7 +170,7 @@ impl<B: GpuBackend> GpuAccelerator<B> {
         // 3. Return predicted states
         Ok(Vec::new())
     }
-    
+
     /// Computes low-rank approximation of residuals on GPU.
     pub fn compress_residuals(
         &self,
@@ -183,7 +187,7 @@ impl<B: GpuBackend> GpuAccelerator<B> {
             rank,
         })
     }
-    
+
     /// Applies corrections in parallel on GPU.
     pub fn apply_corrections(
         &self,
@@ -195,14 +199,15 @@ impl<B: GpuBackend> GpuAccelerator<B> {
         // 2. Return corrected predictions
         Ok(GpuTensor::empty())
     }
-    
+
     /// Synchronizes GPU operations (waits for completion).
     pub fn synchronize(&self) -> HybridResult<()> {
         // Placeholder - actual implementation would call cudaDeviceSynchronize
         Ok(())
     }
-    
+
     /// Returns current memory usage.
+    #[must_use]
     pub fn memory_usage(&self) -> MemoryUsage {
         MemoryUsage {
             allocated: self.memory_pool.allocated(),
@@ -213,20 +218,37 @@ impl<B: GpuBackend> GpuAccelerator<B> {
 }
 
 /// GPU tensor representation.
+#[cfg(not(feature = "cuda"))]
 #[derive(Debug, Clone)]
 pub struct GpuTensor {
     /// Data (may be on host for inspection).
     data: Vec<f32>,
-    
+
     /// Tensor shape.
     shape: Vec<usize>,
-    
+
+    /// Device identifier.
+    #[allow(dead_code)]
+    device: String,
+}
+
+/// GPU tensor representation with CubeCL backend.
+#[cfg(feature = "cuda")]
+#[derive(Debug, Clone)]
+pub struct GpuTensor {
+    /// Data on host (for inspection).
+    data: Vec<f32>,
+
+    /// Tensor shape.
+    shape: Vec<usize>,
+
     /// Device identifier.
     device: String,
 }
 
 impl GpuTensor {
     /// Creates an empty GPU tensor.
+    #[must_use]
     pub fn empty() -> Self {
         Self {
             data: Vec::new(),
@@ -234,18 +256,33 @@ impl GpuTensor {
             device: "cpu".to_string(),
         }
     }
-    
+
+    /// Creates a GPU tensor from host data.
+    #[must_use]
+    pub fn from_slice(data: &[f32], shape: Vec<usize>) -> Self {
+        Self {
+            data: data.to_vec(),
+            shape,
+            device: "cuda".to_string(),
+        }
+    }
+
     /// Returns the tensor shape.
+    #[must_use]
     pub fn shape(&self) -> &[usize] {
         &self.shape
     }
-    
+
     /// Returns the total number of elements.
+    #[must_use]
     pub fn numel(&self) -> usize {
+        // Empty shape [] represents a scalar with 1 element
+        // Shape [0] or [3, 0] would have 0 elements
         self.shape.iter().product()
     }
-    
+
     /// Transfers tensor to host memory.
+    #[must_use]
     pub fn to_host(&self) -> Vec<f32> {
         self.data.clone()
     }
@@ -255,24 +292,28 @@ impl GpuTensor {
 #[derive(Debug, Clone)]
 pub struct CompressedGpuTensor {
     /// Left singular vectors.
+    #[allow(dead_code)]
     u: GpuTensor,
-    
+
     /// Singular values.
+    #[allow(dead_code)]
     s: GpuTensor,
-    
+
     /// Right singular vectors.
+    #[allow(dead_code)]
     v: GpuTensor,
-    
+
     /// Rank of approximation.
     rank: usize,
 }
 
 impl CompressedGpuTensor {
     /// Returns the rank.
+    #[must_use]
     pub fn rank(&self) -> usize {
         self.rank
     }
-    
+
     /// Reconstructs the full tensor.
     pub fn reconstruct(&self) -> HybridResult<GpuTensor> {
         // Placeholder - actual implementation would compute U @ diag(S) @ V^T
@@ -295,15 +336,15 @@ impl MemoryPool {
             peak: 0,
         }
     }
-    
+
     fn allocated(&self) -> usize {
         self.allocated
     }
-    
+
     fn capacity(&self) -> usize {
         self.capacity
     }
-    
+
     fn peak_usage(&self) -> usize {
         self.peak
     }
@@ -314,20 +355,118 @@ impl MemoryPool {
 pub struct MemoryUsage {
     /// Currently allocated bytes.
     pub allocated: usize,
-    
+
     /// Total pool size.
     pub pool_size: usize,
-    
+
     /// Peak usage.
     pub peak_usage: usize,
 }
 
-/// CubeCL kernel definitions.
-pub mod kernels {
-    //! CubeCL kernel implementations.
-    //!
-    //! These kernels are compiled to CUDA/PTX at runtime using CubeCL.
-    
+/// GPU buffer handle (simplified for Phase 1).
+///
+/// In Phase 2, this will be replaced with actual CubeCL buffer handles.
+#[cfg(feature = "cuda")]
+pub type GpuHandle = Vec<f32>;
+
+/// GPU client for kernel launches (CUDA backend).
+///
+/// Simplified implementation for Phase 1 infrastructure setup.
+/// Will be expanded with actual CubeCL integration in Phase 2.
+#[cfg(feature = "cuda")]
+pub struct GpuClient {
+    /// Device ID.
+    device_id: usize,
+}
+
+#[cfg(feature = "cuda")]
+impl GpuClient {
+    /// Creates a new GPU client on the specified device.
+    ///
+    /// # Arguments
+    ///
+    /// - `device_id`: CUDA device ID (0 for first GPU)
+    ///
+    /// # Errors
+    ///
+    /// Returns error if CUDA initialization fails or device is unavailable.
+    pub fn new(device_id: usize) -> HybridResult<Self> {
+        // Phase 1: Simplified implementation
+        // Phase 2 will add actual CubeCL runtime initialization
+        Ok(Self { device_id })
+    }
+
+    /// Returns the device ID.
+    #[must_use]
+    pub fn device_id(&self) -> usize {
+        self.device_id
+    }
+
+    /// Creates a GPU buffer from host data.
+    ///
+    /// # Arguments
+    ///
+    /// - `data`: Slice of f32 values to upload
+    ///
+    /// # Returns
+    ///
+    /// Handle to GPU buffer containing the data.
+    ///
+    /// # Phase 1 Note
+    ///
+    /// Currently returns a copy of the data. Phase 2 will implement
+    /// actual GPU memory allocation via CubeCL.
+    pub fn create_buffer(&self, data: &[f32]) -> GpuHandle {
+        data.to_vec()
+    }
+
+    /// Reads data from GPU buffer to host.
+    ///
+    /// # Arguments
+    ///
+    /// - `handle`: GPU buffer handle
+    /// - `_length`: Number of f32 elements to read (unused in Phase 1)
+    ///
+    /// # Returns
+    ///
+    /// Vector of f32 values read from GPU.
+    pub fn read_buffer(&self, handle: &GpuHandle, _length: usize) -> Vec<f32> {
+        handle.clone()
+    }
+
+    /// Synchronizes GPU execution (waits for all kernels to complete).
+    pub fn sync(&self) {
+        // Phase 1: No-op
+        // Phase 2 will call cudaDeviceSynchronize()
+    }
+}
+
+/// Placeholder for non-CUDA builds.
+#[cfg(not(feature = "cuda"))]
+pub struct GpuClient;
+
+#[cfg(not(feature = "cuda"))]
+impl GpuClient {
+    /// Creates a placeholder client (returns error).
+    pub fn new(_device_id: usize) -> HybridResult<Self> {
+        Err((
+            HybridTrainingError::GpuError {
+                detail: "CUDA feature not enabled".to_string(),
+            },
+            None,
+        ))
+    }
+}
+
+/// `CubeCL` kernel implementations.
+///
+/// Production GPU kernels extracted and adapted from unsloth-rs.
+/// Contains Flash Attention and other performance-critical operations.
+#[cfg(feature = "cuda")]
+pub mod kernels;
+
+/// Kernel configuration types (available without CUDA feature).
+pub mod kernel_config {
     /// State encoding kernel configuration.
     #[derive(Debug, Clone)]
     pub struct EncodeStateConfig {
@@ -338,7 +477,7 @@ pub mod kernels {
         /// Block size for CUDA kernel.
         pub block_size: usize,
     }
-    
+
     impl Default for EncodeStateConfig {
         fn default() -> Self {
             Self {
@@ -348,7 +487,7 @@ pub mod kernels {
             }
         }
     }
-    
+
     /// GRU forward pass kernel configuration.
     #[derive(Debug, Clone)]
     pub struct GruConfig {
@@ -359,7 +498,7 @@ pub mod kernels {
         /// Batch size.
         pub batch_size: usize,
     }
-    
+
     impl Default for GruConfig {
         fn default() -> Self {
             Self {
@@ -372,22 +511,26 @@ pub mod kernels {
 }
 
 /// Burn tensor operations wrapper.
+///
+/// Burn-based tensor operations for GPU acceleration.
 pub mod burn_ops {
-    //! Burn-based tensor operations for GPU acceleration.
-    
+
     /// Performs matrix multiplication using Burn.
+    #[must_use]
     pub fn matmul(_a: &[f32], _b: &[f32], _m: usize, _k: usize, _n: usize) -> Vec<f32> {
         // Placeholder - actual implementation would use burn::tensor::Tensor
         Vec::new()
     }
-    
+
     /// Performs element-wise operations using Burn.
+    #[must_use]
     pub fn elementwise_add(_a: &[f32], _b: &[f32]) -> Vec<f32> {
         // Placeholder
         Vec::new()
     }
-    
+
     /// Computes softmax using Burn.
+    #[must_use]
     pub fn softmax(_x: &[f32], _dim: usize) -> Vec<f32> {
         // Placeholder
         Vec::new()
@@ -412,10 +555,10 @@ mod tests {
 
     #[test]
     fn test_kernel_config_defaults() {
-        let encode_config = kernels::EncodeStateConfig::default();
+        let encode_config = kernel_config::EncodeStateConfig::default();
         assert_eq!(encode_config.block_size, 256);
-        
-        let gru_config = kernels::GruConfig::default();
+
+        let gru_config = kernel_config::GruConfig::default();
         assert_eq!(gru_config.hidden_dim, 256);
     }
 }
