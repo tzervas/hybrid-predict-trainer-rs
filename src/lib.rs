@@ -188,6 +188,9 @@ pub mod training_comparison;
 // Training runners for traditional and hybrid methods
 pub mod training_runner;
 
+// Hugging Face Hub integration for model sharing
+pub mod hf_integration;
+
 // Dataset loaders (local and remote streaming)
 pub mod datasets;
 
