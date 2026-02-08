@@ -1,6 +1,6 @@
 [package]
 name = "hybrid-predict-trainer-rs"
-version = "0.0.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.92"
 license = "MIT"
@@ -14,75 +14,92 @@ keywords = ["machine-learning", "deep-learning", "training", "predictive", "gpu"
 categories = ["science", "mathematics", "algorithms"]
 
 [dependencies]
-# Core tensor operations and deep learning
+# Core tensor operations and deep learning (consolidated)
 burn = { version = "0.20", default-features = false }
-burn-core = { version = "0.20", default-features = false }
-burn-tensor = { version = "0.20", default-features = false }
+
+# Backend support (optional)
+ndarray = { version = "0.16", optional = true }
+burn-cuda = { version = "0.20", optional = true }
 
 # GPU compute acceleration
-cubecl = { version = "0.9", default-features = false, optional = true }
-cubecl-cuda = { version = "0.9", optional = true }
-cubecl-core = { version = "0.9", optional = true }
-cubecl-runtime = { version = "0.9", optional = true }
+# CubeCL for custom CUDA kernels (conflict resolved via workspace wasm-bindgen-futures patch)
+cubecl = { workspace = true, optional = true }
+cubecl-cuda = { workspace = true, optional = true }
 
 # Candle for additional tensor ops and model compatibility
-candle-core = { workspace = true, optional = true }
-candle-nn = { workspace = true, optional = true }
+candle-core = { workspace = true, default-features = false, optional = true }
+candle-nn = { workspace = true, default-features = false, optional = true }
+
+# Rust AI ecosystem integration
+rust-ai-core = { version = "0.3", optional = true }
 
 # Serialization and configuration
-serde = { version = "1.0", features = ["derive"] }
-serde_json = { version = "1.0" }
-toml = { version = "0.9" }
-safetensors = { version = "0.7" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+safetensors = { workspace = true }
+bincode = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+hostname = { workspace = true }
 
 # Error handling
-thiserror = { version = "2.0" }
-anyhow = { version = "1.0" }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 
 # Async runtime
-tokio = { version = "1.49", features = ["full"], optional = true }
+tokio = { workspace = true, optional = true }
 
 # Logging and diagnostics
-tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 # Numeric types
-half = { version = "2.7", features = ["serde"] }
+half = { workspace = true, features = ["serde"] }
 
 # Synchronization primitives
-parking_lot = { version = "0.12" }
+parking_lot = { workspace = true }
 
 # Random number generation
-rand = { version = "0.9" }
-rand_distr = { version = "0.5" }
+rand = { workspace = true }
+rand_distr = { workspace = true }
+
+# HTTP and compression for dataset loading
+ureq = { version = "2.10", optional = true }
+flate2 = { version = "1.0", optional = true }
 
 [dev-dependencies]
-criterion = { version = "0.8", features = ["html_reports"] }
+# Use default-features = false to avoid plotters -> web-sys -> js-sys conflict with uuid
+criterion = { version = "0.8", default-features = false }
 tokio-test = "0.4"
 tempfile = "3.19"
 approx = "0.5"
 
 [features]
-default = ["std"]
-std = ["burn/std", "burn-core/std", "burn-tensor/std"]
+default = ["std", "ndarray"]
+std = ["burn/std"]
 
-# GPU acceleration backends
-cuda = [
-    "cubecl",
-    "cubecl-cuda",
-    "cubecl-core",
-    "cubecl-runtime",
-    "burn/cuda",
-]
+# Backend selection (choose one or more)
+ndarray = ["burn/ndarray", "dep:ndarray"]
+wgpu = ["burn/wgpu"]
+cuda = ["burn/cuda", "cubecl", "cubecl-cuda", "burn-cuda"]
+
+# Burn autodiff support (required for training)
+autodiff = ["burn/autodiff"]
 
 # Candle integration for model compatibility
 candle = ["candle-core", "candle-nn"]
 
+# Ecosystem integration (GpuDispatchable trait)
+ecosystem = ["rust-ai-core", "candle-core"]
+
 # Async support
 async = ["tokio"]
 
+# Dataset loading support
+datasets = ["ureq", "flate2"]
+
 # Full feature set
-full = ["std", "cuda", "candle", "async"]
+full = ["std", "autodiff", "ndarray", "cuda", "candle", "async", "datasets"]
 
 [[bench]]
 name = "phase_transitions"
@@ -96,6 +113,18 @@ harness = false
 name = "residual_extraction"
 harness = false
 
+[[bench]]
+name = "gpu_kernels"
+harness = false
+
+[[bench]]
+name = "gpu_memory_profile"
+harness = false
+
+[[bench]]
+name = "gpu_performance"
+harness = false
+
 [[example]]
 name = "basic_training"
 
@@ -106,9 +135,42 @@ required-features = ["cuda"]
 [[example]]
 name = "custom_predictor"
 
+[[example]]
+name = "gpt2_small_baseline"
+required-features = ["autodiff"]
+
+[[example]]
+name = "gpt2_small_hybrid"
+required-features = ["autodiff"]
+
+[[example]]
+name = "gpt2_small_memory_optimized"
+required-features = ["autodiff"]
+
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "warn"
+
+[lints.clippy]
+# Lint groups with lower priority (processed first)
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Individual lints that override groups (higher priority = processed after)
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+missing_const_for_fn = "allow"
+significant_drop_tightening = "allow"
+needless_pass_by_ref_mut = "allow"
+unused_self = "allow"
+struct_excessive_bools = "allow"
+too_many_lines = "allow"
+cognitive_complexity = "allow"
+
+[[bench]]
+name = "hybrid_trainer_benchmarks"
+harness = false
