@@ -28,7 +28,7 @@
 //! - **Backward pass reduction:** 75-80%
 //! - **Memory usage:** ~10-15% lower with hybrid method
 
-use hybrid_predict_trainer::{
+use hybrid_predict_trainer_rs::{
     config::HybridTrainerConfig,
     training_comparison::{ComparisonConfig, ComparisonRunner},
 };
@@ -58,18 +58,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             warmup_steps: 100,
 
             // Phase transitions
-            min_full_steps: 50,
+            full_steps: 50,
             max_predict_steps: 75, // Validated optimal value
-            correction_interval: Some(15), // Micro-corrections
 
             // Quality control
             confidence_threshold: 0.60,
-            divergence_sigma: 2.2,
-
-            // Dynamics model
-            ensemble_size: 5,
-            latent_dim: 32,
-            feature_dim: 64,
+            divergence_threshold: 2.2,
 
             ..Default::default()
         },
@@ -89,7 +83,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("  Batch size: {}", config.batch_size);
     tracing::info!("  Learning rate: {}", config.learning_rate);
     tracing::info!("  Prediction horizon: {}", config.hybrid_config.max_predict_steps);
-    tracing::info!("  Ensemble size: {}", config.hybrid_config.ensemble_size);
 
     // Create comparison runner
     let runner = ComparisonRunner::new(config).map_err(|e| {
