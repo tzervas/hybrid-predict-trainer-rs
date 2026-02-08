@@ -62,7 +62,7 @@ use crate::phases::Phase;
 /// - `dynamic_range`: true because model weights have varying magnitudes
 /// - `predict_phase_precision`: Int8 because predictions are approximate
 /// - `full_phase_precision`: Fp16 because gradients need precision
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct QuantizationConfig {
     /// Enable quantization (can disable for benchmarking)
     pub enabled: bool,
@@ -104,7 +104,7 @@ impl Default for QuantizationConfig {
 }
 
 /// Numerical precision for tensor storage
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Precision {
     /// 32-bit floating point (4 bytes per value)
     Fp32,

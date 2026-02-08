@@ -44,7 +44,7 @@ use crate::phases::Phase;
 use std::collections::{HashMap, VecDeque};
 
 /// Configuration for CPU offloading
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CpuOffloadConfig {
     /// Maximum number of layers to keep on GPU simultaneously
     ///

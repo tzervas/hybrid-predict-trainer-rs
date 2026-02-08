@@ -466,6 +466,18 @@ pub struct HybridTrainer<M, O> {
 
     /// VRAM manager for tracking and cleaning up GPU memory.
     vram_manager: vram_manager::VramManager,
+
+    /// Gradient checkpointing manager (v0.3.0).
+    gradient_checkpointer: gradient_checkpointing::GradientCheckpointer,
+
+    /// CPU offloading manager (v0.3.0).
+    cpu_offload_manager: cpu_offloading::CpuOffloadManager,
+
+    /// Quantizer for phase-aware precision switching (v0.3.0).
+    quantizer: quantization::Quantizer,
+
+    /// Memory profiler for real-time VRAM tracking (v0.3.0, optional).
+    memory_profiler: Option<memory_profiler::MemoryProfiler>,
 }
 
 impl<M, O> HybridTrainer<M, O> {
@@ -517,6 +529,29 @@ impl<M, O> HybridTrainer<M, O> {
             None
         };
 
+        // Initialize v0.3.0 memory optimization modules
+        let gradient_checkpointer = gradient_checkpointing::GradientCheckpointer::with_config(
+            config.gradient_checkpointing_config.clone(),
+        );
+
+        // CPU offload manager requires number of layers - use predictor config as proxy
+        // TODO: Get actual layer count from model when available
+        let total_layers = 32; // Default assumption for transformer models
+        let cpu_offload_manager = cpu_offloading::CpuOffloadManager::with_config(
+            total_layers,
+            config.cpu_offloading_config.clone(),
+        );
+
+        let quantizer = quantization::Quantizer::new(config.quantization_config);
+
+        let memory_profiler = if config.memory_profiler_enabled {
+            let mut profiler = memory_profiler::MemoryProfiler::new();
+            profiler.start();
+            Some(profiler)
+        } else {
+            None
+        };
+
         Ok(Self {
             model: Arc::new(parking_lot::Mutex::new(model)),
             optimizer: Arc::new(parking_lot::Mutex::new(optimizer)),
@@ -534,6 +569,10 @@ impl<M, O> HybridTrainer<M, O> {
             checkpoint_manager,
             delta_accumulator: delta_accumulator::DeltaAccumulator::new(),
             vram_manager: vram_manager::VramManager::new(),
+            gradient_checkpointer,
+            cpu_offload_manager,
+            quantizer,
+            memory_profiler,
         })
     }
 
@@ -730,6 +769,12 @@ impl<M, O> HybridTrainer<M, O> {
     {
         let start_time = Instant::now();
 
+        // v0.3.0: Record memory at step start (if profiler enabled)
+        if let Some(profiler) = &mut self.memory_profiler {
+            let phase_str = format!("{:?}", self.state.current_phase);
+            profiler.record_step(self.state.step as usize, &phase_str);
+        }
+
         // Update predictor confidence for phase controller
         let confidence = self.dynamics_model.prediction_confidence(&self.state);
         self.phase_controller.set_predictor_confidence(confidence);
@@ -766,14 +811,21 @@ impl<M, O> HybridTrainer<M, O> {
             self.state.steps_in_current_phase = 0;
             self.state.current_phase = phase;
 
+            // v0.3.0: Update optimization modules on phase transitions
+            self.gradient_checkpointer.set_phase(phase);
+            self.cpu_offload_manager.set_phase(phase);
+            self.quantizer.set_phase(phase);
+
             // Log VRAM usage at phase transitions
             let vram_mb = self.vram_manager.last_vram_mb();
             println!(
-                "Phase transition: {:?} → {:?} | VRAM: {} MB | Copies: {}",
+                "Phase transition: {:?} → {:?} | VRAM: {} MB | Copies: {} | Checkpoints: {} | Quantized: {}",
                 previous_phase,
                 phase,
                 vram_mb,
-                crate::vram_manager::VramManager::total_copies()
+                crate::vram_manager::VramManager::total_copies(),
+                self.gradient_checkpointer.statistics().total_checkpoints,
+                self.quantizer.statistics().total_quantizations,
             );
 
             // Flush accumulated weight deltas at phase transitions (VRAM optimization)
@@ -1317,6 +1369,27 @@ impl<M, O> HybridTrainer<M, O> {
             None
         };
 
+        // Initialize v0.3.0 memory optimization modules from checkpoint config
+        let gradient_checkpointer = gradient_checkpointing::GradientCheckpointer::with_config(
+            checkpoint.config.gradient_checkpointing_config.clone(),
+        );
+
+        let total_layers = 32; // Default assumption
+        let cpu_offload_manager = cpu_offloading::CpuOffloadManager::with_config(
+            total_layers,
+            checkpoint.config.cpu_offloading_config.clone(),
+        );
+
+        let quantizer = quantization::Quantizer::new(checkpoint.config.quantization_config);
+
+        let memory_profiler = if checkpoint.config.memory_profiler_enabled {
+            let mut profiler = memory_profiler::MemoryProfiler::new();
+            profiler.start();
+            Some(profiler)
+        } else {
+            None
+        };
+
         Ok(Self {
             model: Arc::new(parking_lot::Mutex::new(model)),
             optimizer: Arc::new(parking_lot::Mutex::new(optimizer)),
@@ -1334,6 +1407,10 @@ impl<M, O> HybridTrainer<M, O> {
             checkpoint_manager,
             delta_accumulator: delta_accumulator::DeltaAccumulator::new(),
             vram_manager: vram_manager::VramManager::new(),
+            gradient_checkpointer,
+            cpu_offload_manager,
+            quantizer,
+            memory_profiler,
         })
     }
 

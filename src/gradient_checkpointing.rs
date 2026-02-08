@@ -31,7 +31,7 @@
 use std::collections::HashMap;
 
 /// Configuration for gradient checkpointing
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CheckpointConfig {
     /// Checkpoint interval (checkpoint every N layers)
     ///

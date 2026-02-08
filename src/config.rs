@@ -168,6 +168,44 @@ pub struct HybridTrainerConfig {
     /// Expected savings: 60-70% VRAM reduction during Predict phase.
     #[serde(default)]
     pub predict_aware_memory_config: crate::predict_aware_memory::PredictAwareMemoryConfig,
+
+    /// Gradient checkpointing configuration (v0.3.0).
+    ///
+    /// Enables selective activation checkpointing to reduce memory usage
+    /// by trading compute for memory. Only activates during Full/Correct
+    /// phases (not Predict, which has no backward pass).
+    ///
+    /// Expected savings: 80-96% activation memory reduction.
+    #[serde(default)]
+    pub gradient_checkpointing_config: crate::gradient_checkpointing::CheckpointConfig,
+
+    /// CPU offloading configuration (v0.3.0).
+    ///
+    /// Enables streaming layers between CPU RAM and GPU VRAM for massive
+    /// model training (7B-50B params). Only active during Full phase,
+    /// disabled during Predict/Correct to preserve backward pass capability.
+    ///
+    /// Expected savings: 95% parameter memory reduction (2-5× slower).
+    #[serde(default)]
+    pub cpu_offloading_config: crate::cpu_offloading::CpuOffloadConfig,
+
+    /// 8-bit quantization configuration (v0.3.0).
+    ///
+    /// Enables INT8 quantization with phase-aware precision switching.
+    /// Uses int8 during Predict phase (approximate anyway), fp16 during
+    /// Full/Correct phases (accurate gradients needed).
+    ///
+    /// Expected savings: 50% weight memory reduction.
+    #[serde(default)]
+    pub quantization_config: crate::quantization::QuantizationConfig,
+
+    /// Enable real-time memory profiling (v0.3.0).
+    ///
+    /// When enabled, tracks GPU VRAM usage at each training step via
+    /// nvidia-smi. Useful for validating memory optimizations and
+    /// debugging OOM issues. Minimal overhead (~0.1%).
+    #[serde(default = "default_memory_profiler_enabled")]
+    pub memory_profiler_enabled: bool,
 }
 
 // Default value functions for serde
@@ -195,6 +233,9 @@ fn default_collect_metrics() -> bool {
 fn default_correction_interval() -> usize {
     0
 }
+fn default_memory_profiler_enabled() -> bool {
+    false
+}
 
 impl Default for HybridTrainerConfig {
     fn default() -> Self {
@@ -217,6 +258,10 @@ impl Default for HybridTrainerConfig {
                 crate::gradient_accumulation::GradientAccumulationConfig::default(),
             predict_aware_memory_config:
                 crate::predict_aware_memory::PredictAwareMemoryConfig::default(),
+            gradient_checkpointing_config: crate::gradient_checkpointing::CheckpointConfig::default(),
+            cpu_offloading_config: crate::cpu_offloading::CpuOffloadConfig::default(),
+            quantization_config: crate::quantization::QuantizationConfig::default(),
+            memory_profiler_enabled: default_memory_profiler_enabled(),
         }
     }
 }
@@ -359,6 +404,10 @@ pub struct HybridTrainerConfigBuilder {
     mixed_precision_config: Option<crate::mixed_precision::MixedPrecisionConfig>,
     gradient_accumulation_config: Option<crate::gradient_accumulation::GradientAccumulationConfig>,
     predict_aware_memory_config: Option<crate::predict_aware_memory::PredictAwareMemoryConfig>,
+    gradient_checkpointing_config: Option<crate::gradient_checkpointing::CheckpointConfig>,
+    cpu_offloading_config: Option<crate::cpu_offloading::CpuOffloadConfig>,
+    quantization_config: Option<crate::quantization::QuantizationConfig>,
+    memory_profiler_enabled: Option<bool>,
 }
 
 impl HybridTrainerConfigBuilder {
@@ -476,6 +525,43 @@ impl HybridTrainerConfigBuilder {
         self
     }
 
+    /// Sets the gradient checkpointing configuration (v0.3.0).
+    #[must_use]
+    pub fn gradient_checkpointing_config(
+        mut self,
+        config: crate::gradient_checkpointing::CheckpointConfig,
+    ) -> Self {
+        self.gradient_checkpointing_config = Some(config);
+        self
+    }
+
+    /// Sets the CPU offloading configuration (v0.3.0).
+    #[must_use]
+    pub fn cpu_offloading_config(
+        mut self,
+        config: crate::cpu_offloading::CpuOffloadConfig,
+    ) -> Self {
+        self.cpu_offloading_config = Some(config);
+        self
+    }
+
+    /// Sets the quantization configuration (v0.3.0).
+    #[must_use]
+    pub fn quantization_config(
+        mut self,
+        config: crate::quantization::QuantizationConfig,
+    ) -> Self {
+        self.quantization_config = Some(config);
+        self
+    }
+
+    /// Enables or disables real-time memory profiling (v0.3.0).
+    #[must_use]
+    pub fn memory_profiler_enabled(mut self, enabled: bool) -> Self {
+        self.memory_profiler_enabled = Some(enabled);
+        self
+    }
+
     /// Builds the configuration with defaults for unset values.
     pub fn build(self) -> HybridTrainerConfig {
         HybridTrainerConfig {
@@ -509,6 +595,14 @@ impl HybridTrainerConfigBuilder {
             predict_aware_memory_config: self
                 .predict_aware_memory_config
                 .unwrap_or_default(),
+            gradient_checkpointing_config: self
+                .gradient_checkpointing_config
+                .unwrap_or_default(),
+            cpu_offloading_config: self.cpu_offloading_config.unwrap_or_default(),
+            quantization_config: self.quantization_config.unwrap_or_default(),
+            memory_profiler_enabled: self
+                .memory_profiler_enabled
+                .unwrap_or_else(default_memory_profiler_enabled),
         }
     }
 }
