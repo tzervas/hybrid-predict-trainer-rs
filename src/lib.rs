@@ -182,6 +182,9 @@ pub mod vram_manager;
 // Memory monitoring and safety for training
 pub mod memory_monitor;
 
+// GPU memory monitoring and CPU-GPU coordination
+pub mod gpu_memory_monitor;
+
 // Dataset management for training comparisons
 pub mod dataset_manager;
 
