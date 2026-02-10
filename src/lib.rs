@@ -179,6 +179,9 @@ pub mod checkpoint;
 // VRAM manager for tracking and cleaning up GPU memory
 pub mod vram_manager;
 
+// Memory monitoring and safety for training
+pub mod memory_monitor;
+
 // Dataset management for training comparisons
 pub mod dataset_manager;
 

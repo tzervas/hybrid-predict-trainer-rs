@@ -1,0 +1,8 @@
+Benchmark Run: 20260208_034717
+System: Linux akula-prime 6.12.63+deb13-amd64 #1 SMP PREEMPT_DYNAMIC Debian 6.12.63-1 (2025-12-30) x86_64 GNU/Linux
+Rust Version: rustc 1.93.0 (254b59607 2026-01-19)
+Cargo Version: cargo 1.93.0 (083ac5135 2025-12-15)
+Hostname: akula-prime
+CPU: Intel(R) Core(TM) i7-14700K
+Memory: 46Gi
+GPU: NVIDIA GeForce RTX 5080
