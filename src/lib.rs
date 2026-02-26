@@ -1073,8 +1073,12 @@ impl<M, O> HybridTrainer<M, O> {
         // Forward pass to get actual loss (for validation)
         let actual_loss = model.forward(batch)?;
 
-        // Clear forward state immediately (no backward in Predict phase)
-        // This prevents memory accumulation from unused autodiff graphs
+        // Run backward() to properly flush the Burn/CubeCL Fusion autodiff graph.
+        // Without this, the computation graph and intermediate activations accumulate
+        // across Predict steps causing OOM (CubeCL pool fragmentation).
+        // We compute gradients but discard them (no optimizer.step() call).
+        // This still skips the expensive AdamW optimizer step (~2000ms saved per step).
+        let _grad_info = model.backward().ok(); // Gradients discarded - no optimizer step
         model.clear_forward_state();
 
         // Compute prediction error (absolute difference)

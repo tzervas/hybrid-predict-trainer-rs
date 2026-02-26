@@ -26,6 +26,7 @@ use burn::{
     backend::{Autodiff, NdArray},
     module::Module as BurnModule,
     optim::AdamConfig,
+    record::{NamedMpkFileRecorder, FullPrecisionSettings, Recorder},
     tensor::{backend::Backend, Int, Tensor, TensorData},
 };
 
@@ -367,7 +368,50 @@ fn main() {
             trainer
                 .save_checkpoint(&checkpoint_path)
                 .unwrap_or_else(|e| eprintln!("  Checkpoint failed: {:?}", e));
-            println!("  Checkpoint saved.\n");
+
+            // Save model weights using Burn recorder
+            let weights_path = format!("{checkpoint_dir}/model_weights_step_{step}");
+            println!("  Saving model weights to {weights_path}.mpk...");
+            let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
+            let save_result = trainer.model().with_model(|model| {
+                recorder.record(model.clone().into_record(), weights_path.clone().into())
+            });
+            match save_result {
+                Some(Ok(())) => {
+                    println!("  Model weights saved.");
+                    // Upload to HF
+                    let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+                    let hf_token = std::fs::read_to_string(
+                        format!("{}/.cache/huggingface/token", home_dir)
+                    ).ok().map(|s| s.trim().to_string()).unwrap_or_default();
+                    if !hf_token.is_empty() {
+                        let mpk_file = format!("{weights_path}.mpk");
+                        let hf_path = format!("checkpoints/model_weights_step_{step}.mpk");
+                        let upload_url = format!(
+                            "https://huggingface.co/api/models/{hf_repo}/upload/main/{hf_path}"
+                        );
+                        let upload_result = std::process::Command::new("curl")
+                            .args(["-s", "-X", "PUT", &upload_url,
+                                "-H", &format!("Authorization: Bearer {hf_token}"),
+                                "-H", "Content-Type: application/octet-stream",
+                                "--data-binary", &format!("@{mpk_file}")])
+                            .output();
+                        match upload_result {
+                            Ok(o) if o.status.success() => {
+                                println!("  ✓ Checkpoint uploaded to HF: {hf_path}");
+                                // Delete local model weights file after upload
+                                let _ = std::fs::remove_file(&mpk_file);
+                                println!("  Deleted local model weights (saved to HF).");
+                            }
+                            Ok(o) => eprintln!("  HF upload failed: {}", o.status),
+                            Err(e) => eprintln!("  curl error: {e}"),
+                        }
+                    }
+                }
+                Some(Err(e)) => eprintln!("  Model weight save failed: {e:?}"),
+                None => eprintln!("  Model not available for saving"),
+            }
+            println!("  Checkpoint complete.\n");
         }
     }
 
@@ -402,6 +446,19 @@ fn main() {
         println!("\nHybrid Training Efficiency:");
         println!("  Predict phase:      {:.1}%", predict_pct);
         println!("  Estimated speedup:  {:.1}x", speedup);
+    }
+
+    // Save final model weights
+    println!("\nSaving final model weights...");
+    let final_weights_path = format!("{checkpoint_dir}/model_weights_final");
+    let recorder = NamedMpkFileRecorder::<FullPrecisionSettings>::new();
+    let save_result = trainer.model().with_model(|model| {
+        recorder.record(model.clone().into_record(), final_weights_path.clone().into())
+    });
+    match save_result {
+        Some(Ok(())) => println!("  Final model weights saved to {final_weights_path}.mpk"),
+        Some(Err(e)) => eprintln!("  Final weight save failed: {e:?}"),
+        None => eprintln!("  Model not available for saving"),
     }
 
     // Upload model card to HuggingFace
@@ -482,6 +539,39 @@ fn main() {
             }
             Err(e) => {
                 eprintln!("  Failed to run curl: {}", e);
+            }
+        }
+
+        // Upload final model weights to HF
+        let final_mpk = format!("{checkpoint_dir}/model_weights_final.mpk");
+        if std::path::Path::new(&final_mpk).exists() {
+            println!("\nUploading final model weights to HuggingFace...");
+            let upload_url = format!(
+                "https://huggingface.co/api/models/{hf_repo}/upload/main/model_weights_final.mpk"
+            );
+            let upload_result = std::process::Command::new("curl")
+                .args(["-s", "-X", "PUT", &upload_url,
+                    "-H", &format!("Authorization: Bearer {hf_token}"),
+                    "-H", "Content-Type: application/octet-stream",
+                    "--data-binary", &format!("@{final_mpk}")])
+                .output();
+            match upload_result {
+                Ok(o) if o.status.success() => {
+                    println!("  ✓ Final model weights uploaded to HF");
+                    // Clean up all local checkpoints and model files
+                    println!("  Cleaning up local checkpoints...");
+                    if let Ok(entries) = std::fs::read_dir(checkpoint_dir) {
+                        for entry in entries.flatten() {
+                            let p = entry.path();
+                            if p.extension().map_or(false, |e| e == "mpk" || e == "bin") {
+                                let _ = std::fs::remove_file(&p);
+                            }
+                        }
+                    }
+                    println!("  ✓ Local model files cleaned up (saved to HF).");
+                }
+                Ok(o) => eprintln!("  Final model upload failed: {}", o.status),
+                Err(e) => eprintln!("  curl error: {e}"),
             }
         }
     } else {

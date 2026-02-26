@@ -276,6 +276,22 @@ where
     // Until then, current implementation uses high-level Burn APIs that don't
     // require tensor-level manipulation.
 
+    /// Runs a closure with read access to the inner model.
+    ///
+    /// Used for model inspection and saving without taking ownership.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// wrapper.with_model(|model| {
+    ///     // model is &M, can be used for recording/saving
+    /// });
+    /// ```
+    pub fn with_model<R, Func: FnOnce(&M) -> R>(&self, f: Func) -> Option<R> {
+        let lock = self.model.lock();
+        lock.as_ref().map(f)
+    }
+
     /// Clears the last loss tensor and its autodiff graph.
     ///
     /// This method should be called during the Predict phase after forward()
