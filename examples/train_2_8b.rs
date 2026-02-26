@@ -168,7 +168,7 @@ fn main() {
         .max_predict_steps(75) // Optimal horizon from 3D sweep
         .correction_interval(15) // Micro-corrections every 15 steps
         .divergence_threshold(2.2)
-        .confidence_threshold(0.60)
+        .confidence_threshold(0.55) // Lower end of validated range [0.55-0.60]
         .build();
 
     println!("\nHybrid Configuration:");

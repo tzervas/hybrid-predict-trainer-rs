@@ -1589,7 +1589,7 @@ impl RSSMLite {
         // Start with moderate confidence to allow initial predictive exploration
         // Confidence will adjust based on actual prediction accuracy
         let historical_confidence = if self.prediction_errors.len() < 10 {
-            0.7 // Moderate confidence to enable initial predict phases
+            0.85 // High initial confidence to enable early predict phases (before error feedback)
         } else {
             let recent_errors: Vec<_> = self
                 .prediction_errors

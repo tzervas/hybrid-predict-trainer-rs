@@ -429,8 +429,11 @@ where
 
     fn clear_forward_state(&mut self) {
         // Clear the last loss tensor to free autodiff graph
-        // This is critical during Predict phase when backward() won't be called
         self.clear_loss();
+        // Also clear gradients - in Predict phase we call backward() to flush
+        // the autodiff graph but skip the optimizer step, so gradients must be
+        // explicitly freed here to prevent VRAM accumulation across Predict steps.
+        *self.last_gradients.lock() = None;
     }
 
     fn parameter_count(&self) -> usize {
