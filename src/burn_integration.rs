@@ -65,7 +65,7 @@ use crate::{Batch, GradientInfo, Model, Optimizer};
 use burn::module::{AutodiffModule, ModuleMapper, ModuleVisitor, Param};
 use burn::optim::GradientsParams;
 use burn::tensor::backend::{AutodiffBackend, Backend};
-use burn::tensor::{Shape, Tensor, TensorData};
+use burn::tensor::{Tensor, TensorData};
 
 use parking_lot::RwLock;
 use std::collections::HashMap;

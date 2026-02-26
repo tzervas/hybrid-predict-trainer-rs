@@ -53,6 +53,7 @@
 //! ```
 
 use crate::error::{HybridResult, HybridTrainingError};
+#[cfg(all(feature = "cubecl-kernels", feature = "candle"))]
 use crate::gpu::kernels::gru::GpuGruWeights;
 
 #[cfg(all(feature = "cuda", feature = "candle"))]

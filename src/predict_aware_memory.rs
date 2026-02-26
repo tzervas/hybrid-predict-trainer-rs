@@ -417,7 +417,7 @@ impl PredictAwareMemoryState {
     ///
     /// - Restore optimizer state from CPU (if not already async restored)
     /// - Re-enable activation storage
-    pub fn exit_predict_phase(&mut self, config: &PredictAwareMemoryConfig) {
+    pub fn exit_predict_phase(&mut self, _config: &PredictAwareMemoryConfig) {
         if self.optimizer_offloaded {
             // TODO: Restore optimizer state from CPU
             self.optimizer_offloaded = false;

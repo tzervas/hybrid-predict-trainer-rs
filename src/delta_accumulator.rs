@@ -18,7 +18,6 @@
 //! - **7× memory reduction**
 
 use crate::state::WeightDelta;
-use crate::HybridResult;
 use std::collections::HashMap;
 
 /// Accumulates weight deltas for batched application.

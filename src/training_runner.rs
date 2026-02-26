@@ -43,7 +43,6 @@
 use crate::config::HybridTrainerConfig;
 use crate::error::{HybridResult, HybridTrainingError};
 use crate::training_comparison::{PhaseStatistics, TrainingMethod, TrainingResults};
-use crate::HybridTrainer;
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
 
@@ -450,7 +449,6 @@ impl TrainingRunner {
 
 /// Helper functions for working with Burn models.
 pub mod burn_helpers {
-    use super::*;
 
     /// Calculates accuracy from logits and targets.
     ///

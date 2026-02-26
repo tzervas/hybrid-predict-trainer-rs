@@ -462,7 +462,8 @@ impl GpuClient {
 ///
 /// Production GPU kernels extracted and adapted from unsloth-rs.
 /// Contains Flash Attention and other performance-critical operations.
-#[cfg(feature = "cuda")]
+/// Requires `cubecl-kernels` feature (in addition to `cuda`).
+#[cfg(feature = "cubecl-kernels")]
 pub mod kernels;
 
 /// Kernel configuration types (available without CUDA feature).

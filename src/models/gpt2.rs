@@ -10,6 +10,7 @@ use burn::{
         attention::{
             generate_autoregressive_mask, MhaInput, MultiHeadAttention, MultiHeadAttentionConfig,
         },
+        loss::CrossEntropyLossConfig,
         Dropout, DropoutConfig, Embedding, EmbeddingConfig, Gelu, LayerNorm, LayerNormConfig,
         Linear, LinearConfig,
     },
@@ -72,6 +73,63 @@ impl Gpt2Config {
             n_head: 25,
             dropout: 0.1,
         }
+    }
+
+    /// GPT-2 style 2.8B parameter configuration for hybrid predictive training.
+    ///
+    /// Architecture: n_embd=2560, n_layer=32, n_head=32
+    /// Estimated parameters: ~2.8B (at bf16 = ~5.6GB VRAM)
+    /// VRAM budget: fits in 16GB with AdamW bf16 state + gradient accumulation
+    #[must_use]
+    pub fn gpt2_2_8b() -> Self {
+        Self {
+            vocab_size: 50257,
+            n_positions: 1024,
+            n_embd: 2560,
+            n_layer: 32,
+            n_head: 32,
+            dropout: 0.0,
+        }
+    }
+
+    /// GPT-2 2.8B with reduced context window for 16GB VRAM training.
+    /// NOTE: This exceeds f32 training budget (~42GB needed). Use gpt2_800m_vram16() instead.
+    #[must_use]
+    pub fn gpt2_2_8b_vram16() -> Self {
+        Self {
+            n_positions: 256,
+            ..Self::gpt2_2_8b()
+        }
+    }
+
+    /// ~800M parameter model designed for f32 training on 16GB VRAM (RTX 5080).
+    ///
+    /// Architecture: n_embd=1280, n_layer=36, n_head=20, n_positions=128
+    /// VRAM budget:
+    ///   weights(3.1GB) + grads(3.1GB) + AdamW(6.2GB) + activations(~0.24GB) ≈ 12.6GB peak
+    /// seq_len=128 to keep attention memory ([1,20,128,128]=45MB/36layers=1.6GB) manageable.
+    #[must_use]
+    pub fn gpt2_800m_vram16() -> Self {
+        Self {
+            vocab_size: 50257,
+            n_positions: 128,
+            n_embd: 1280,
+            n_layer: 36,
+            n_head: 20,
+            dropout: 0.0,
+        }
+    }
+
+    /// Estimate parameter count for this configuration.
+    #[must_use]
+    pub fn estimated_param_count(&self) -> usize {
+        let embed_params = self.vocab_size * self.n_embd + self.n_positions * self.n_embd;
+        let per_layer = 4 * self.n_embd * self.n_embd  // QKV+out projections
+                      + 4 * self.n_embd               // attention biases
+                      + 8 * self.n_embd * self.n_embd  // MLP fc + proj (4x hidden)
+                      + 8 * self.n_embd               // MLP biases
+                      + 4 * self.n_embd;              // 2x LayerNorm (weight+bias)
+        embed_params + self.n_layer * per_layer + 2 * self.n_embd // final LN
     }
 }
 
@@ -257,6 +315,30 @@ impl<B: Backend> Gpt2Model<B> {
         let logits_flat = x_flat.matmul(wte_weight);
         logits_flat.reshape([batch_size, seq_len, self.wte.weight.val().dims()[0]])
     }
+
+    /// Compute language modeling cross-entropy loss.
+    ///
+    /// # Arguments
+    /// * `input_ids` - Token IDs [batch_size, seq_len]
+    /// * `targets` - Target token IDs [batch_size, seq_len]
+    ///
+    /// Returns scalar loss tensor.
+    pub fn forward_lm_loss(
+        &self,
+        input_ids: Tensor<B, 2, Int>,
+        targets: Tensor<B, 2, Int>,
+    ) -> Tensor<B, 1> {
+        let logits = self.forward(input_ids); // [B, S, V]
+        let [batch_size, seq_len, vocab_size] = logits.dims();
+
+        // Reshape for cross-entropy: [B*S, V] vs [B*S]
+        let logits_2d = logits.reshape([batch_size * seq_len, vocab_size]);
+        let targets_1d = targets.reshape([batch_size * seq_len]);
+
+        CrossEntropyLossConfig::new()
+            .init(&logits_2d.device())
+            .forward(logits_2d, targets_1d)
+    }
 }
 
 /// Batch type for GPT-2 training.
@@ -339,5 +421,23 @@ mod tests {
 
         // Output should be same shape
         assert_eq!(output.dims(), [2, 10, 768]);
+    }
+
+    #[test]
+    fn test_gpt2_2_8b_config() {
+        let config = Gpt2Config::gpt2_2_8b();
+        let params = config.estimated_param_count();
+        // Should be approximately 2.8B
+        assert!(params > 2_500_000_000, "Expected ~2.8B params, got {params}");
+        assert!(params < 3_100_000_000, "Expected ~2.8B params, got {params}");
+    }
+
+    #[test]
+    fn test_gpt2_2_8b_vram16_config() {
+        let config = Gpt2Config::gpt2_2_8b_vram16();
+        assert_eq!(config.n_positions, 256);
+        assert_eq!(config.n_embd, 2560);
+        assert_eq!(config.n_layer, 32);
+        assert_eq!(config.n_head, 32);
     }
 }

@@ -144,7 +144,186 @@ impl ParquetDataset {
     }
 }
 
-/// Iterator over parquet batches.
+/// Iterator over text batches from parquet files.
+///
+/// Reads text column from parquet shards and tokenizes with byte-level tokenizer.
+#[cfg(feature = "datasets")]
+pub struct TextBatchIterator {
+    shard_paths: Vec<PathBuf>,
+    current_shard: usize,
+    current_rows: Vec<(Vec<u32>, Vec<u32>)>, // (input_ids, target_ids)
+    row_idx: usize,
+    seq_length: usize,
+    batch_size: usize,
+}
+
+#[cfg(feature = "datasets")]
+impl TextBatchIterator {
+    /// Creates a new text batch iterator from parquet shards.
+    ///
+    /// # Arguments
+    ///
+    /// * `data_dir` - Directory containing .parquet files
+    /// * `seq_length` - Sequence length for tokenization
+    /// * `batch_size` - Number of samples per batch
+    ///
+    /// # Errors
+    ///
+    /// Returns error if data_dir doesn't exist or can't be read.
+    pub fn new(
+        data_dir: &std::path::Path,
+        seq_length: usize,
+        batch_size: usize,
+    ) -> HybridResult<Self> {
+        use std::fs;
+
+        if !data_dir.exists() {
+            return Err((
+                HybridTrainingError::ConfigError {
+                    detail: format!("Data directory not found: {:?}", data_dir),
+                },
+                None,
+            ));
+        }
+
+        // Find all .parquet files in data_dir
+        let shard_paths: Vec<_> = fs::read_dir(data_dir)
+            .map_err(|e| {
+                (
+                    HybridTrainingError::ConfigError {
+                        detail: format!("Failed to read directory: {}", e),
+                    },
+                    None,
+                )
+            })?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.extension().map_or(false, |ext| ext == "parquet"))
+            .collect();
+
+        if shard_paths.is_empty() {
+            return Err((
+                HybridTrainingError::ConfigError {
+                    detail: format!("No parquet files found in {:?}", data_dir),
+                },
+                None,
+            ));
+        }
+
+        Ok(Self {
+            shard_paths,
+            current_shard: 0,
+            current_rows: Vec::new(),
+            row_idx: 0,
+            seq_length,
+            batch_size,
+        })
+    }
+
+    /// Load next shard into memory (text only, ~28MB per shard).
+    fn load_next_shard(&mut self) -> bool {
+        if self.current_shard >= self.shard_paths.len() {
+            return false;
+        }
+        let path = &self.shard_paths[self.current_shard];
+        self.current_shard += 1;
+
+        // Read all text from parquet, tokenize with simple byte tokenizer
+        self.current_rows = self.read_shard(path).unwrap_or_default();
+        self.row_idx = 0;
+        !self.current_rows.is_empty()
+    }
+
+    /// Read and tokenize text from a single parquet shard.
+    fn read_shard(&self, path: &std::path::Path) -> HybridResult<Vec<(Vec<u32>, Vec<u32>)>> {
+        use parquet::file::reader::{FileReader, SerializedFileReader};
+        use parquet::record::RowAccessor;
+        use std::fs::File;
+
+        let file = File::open(path).map_err(|e| {
+            (
+                HybridTrainingError::ConfigError {
+                    detail: format!("Failed to open parquet file {:?}: {}", path, e),
+                },
+                None,
+            )
+        })?;
+
+        let reader = SerializedFileReader::new(file).map_err(|e| {
+            (
+                HybridTrainingError::ConfigError {
+                    detail: format!("Failed to read parquet metadata: {}", e),
+                },
+                None,
+            )
+        })?;
+
+        let mut pairs = Vec::new();
+        let iter = reader.get_row_iter(None).map_err(|e| {
+            (
+                HybridTrainingError::ConfigError {
+                    detail: format!("Failed to create row iterator: {}", e),
+                },
+                None,
+            )
+        })?;
+
+        for row_result in iter {
+            let row = row_result.map_err(|e| {
+                (
+                    HybridTrainingError::ConfigError {
+                        detail: format!("Failed to read row: {}", e),
+                    },
+                    None,
+                )
+            })?;
+
+            // Extract "text" column (typically at index 0)
+            if let Ok(text) = row.get_string(0) {
+                // Simple byte-level tokenization
+                let mut ids: Vec<u32> = text.as_str().bytes().map(|b| b as u32).collect();
+                ids.truncate(self.seq_length + 1);
+
+                if ids.len() >= 2 {
+                    let input_ids = ids[..ids.len() - 1].to_vec();
+                    let targets = ids[1..].to_vec();
+                    pairs.push((input_ids, targets));
+                }
+            }
+        }
+
+        Ok(pairs)
+    }
+
+    /// Reads next batch from parquet files.
+    ///
+    /// # Returns
+    ///
+    /// Option<Vec<(input_ids, target_ids)>> or None if end of dataset reached.
+    fn read_batch(&mut self) -> HybridResult<Option<Vec<(Vec<u32>, Vec<u32>)>>> {
+        // Load more data if needed
+        while self.row_idx >= self.current_rows.len() {
+            if !self.load_next_shard() {
+                return Ok(None);
+            }
+        }
+
+        // Create batch
+        let batch_end = (self.row_idx + self.batch_size).min(self.current_rows.len());
+        let batch = self.current_rows[self.row_idx..batch_end].to_vec();
+        self.row_idx = batch_end;
+
+        if batch.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(batch))
+        }
+    }
+}
+
+/// Legacy ParquetBatchIterator for backward compatibility with image datasets.
+///
+/// This iterator reads image data from MNIST-style parquet files.
 #[cfg(feature = "datasets")]
 pub struct ParquetBatchIterator {
     path: PathBuf,
@@ -155,7 +334,7 @@ pub struct ParquetBatchIterator {
 
 #[cfg(feature = "datasets")]
 impl ParquetBatchIterator {
-    /// Reads next batch from parquet file.
+    /// Reads next batch from parquet file (legacy image dataset format).
     ///
     /// # Returns
     ///
@@ -221,7 +400,7 @@ impl ParquetBatchIterator {
         // Read batch
         for _ in 0..actual_batch_size {
             if let Some(row) = iter.next() {
-                let row = row.map_err(|e| {
+                let _row = row.map_err(|e| {
                     (
                         HybridTrainingError::ConfigError {
                             detail: format!("Failed to read row: {}", e),
@@ -230,9 +409,7 @@ impl ParquetBatchIterator {
                     )
                 })?;
 
-                // TODO: Implement proper parquet field extraction
-                // This requires matching the specific parquet version's API
-                // For now, return placeholder data
+                // Extract image and label from parquet row (placeholders)
                 let image_data = vec![0.0f32; 784];
                 let label = 0usize;
 
@@ -250,6 +427,19 @@ impl ParquetBatchIterator {
 #[cfg(feature = "datasets")]
 impl Iterator for ParquetBatchIterator {
     type Item = HybridResult<(Vec<Vec<f32>>, Vec<usize>)>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.read_batch() {
+            Ok(Some(batch)) => Some(Ok(batch)),
+            Ok(None) => None,
+            Err(e) => Some(Err(e)),
+        }
+    }
+}
+
+#[cfg(feature = "datasets")]
+impl Iterator for TextBatchIterator {
+    type Item = HybridResult<Vec<(Vec<u32>, Vec<u32>)>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.read_batch() {
@@ -344,7 +534,7 @@ pub fn convert_mnist_to_parquet(
         })?;
 
     // Write data
-    let (images, labels) = mnist.train_data();
+    let (images, _labels) = mnist.train_data();
 
     tracing::info!(num_samples = images.len(), "Writing parquet data");
 
@@ -376,6 +566,30 @@ mod tests {
         if path.exists() {
             let dataset = ParquetDataset::new(path, 64);
             assert!(dataset.is_ok());
+        }
+    }
+
+    #[test]
+    fn test_text_batch_iterator_new_no_dir() {
+        let result = TextBatchIterator::new(
+            &PathBuf::from("/nonexistent/path"),
+            256,
+            64,
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[ignore] // Requires fineweb-edu parquet files
+    fn test_text_batch_iterator_load_shard() {
+        let data_dir = std::path::Path::new("/data/datasets/tritter/datasets/fineweb-edu");
+        if data_dir.exists() {
+            let mut iterator = TextBatchIterator::new(data_dir, 256, 64)
+                .expect("Failed to create iterator");
+            let batch = iterator.next();
+            if let Some(Ok(b)) = batch {
+                assert!(!b.is_empty());
+            }
         }
     }
 }

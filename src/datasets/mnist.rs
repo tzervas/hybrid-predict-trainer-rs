@@ -83,9 +83,23 @@ impl MnistDataset {
 
         // Download if needed
         if !all_exist {
-            if let DatasetSource::Remote { url, cache_dir } = &source {
+            if let DatasetSource::Remote { url: _url, cache_dir: _cache_dir } = &source {
+                #[cfg(feature = "datasets")]
+                let (url, cache_dir) = (_url, _cache_dir);
                 tracing::info!("MNIST files not found locally, downloading...");
-                Self::download_mnist(url, cache_dir)?;
+                #[cfg(feature = "datasets")]
+                {
+                    Self::download_mnist(url, cache_dir)?;
+                }
+                #[cfg(not(feature = "datasets"))]
+                {
+                    return Err((
+                        HybridTrainingError::ConfigError {
+                            detail: "Remote dataset download requires 'datasets' feature".to_string(),
+                        },
+                        None,
+                    ));
+                }
             } else {
                 return Err((
                     HybridTrainingError::ConfigError {
@@ -124,6 +138,7 @@ impl MnistDataset {
     }
 
     /// Downloads MNIST files from remote source.
+    #[cfg(feature = "datasets")]
     fn download_mnist(base_url: &str, cache_dir: &PathBuf) -> HybridResult<()> {
         let mnist_dir = cache_dir.join("mnist");
         std::fs::create_dir_all(&mnist_dir).map_err(|e| {
@@ -186,9 +201,9 @@ impl MnistDataset {
     }
 
     /// Decompresses .gz file.
+    #[cfg(feature = "datasets")]
     fn decompress_gz(gz_path: &PathBuf, output_path: &PathBuf) -> HybridResult<()> {
         use flate2::read::GzDecoder;
-        use std::io::Write;
 
         let gz_file = File::open(gz_path).map_err(|e| {
             (

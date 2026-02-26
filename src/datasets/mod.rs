@@ -49,6 +49,7 @@ pub mod mnist;
 #[cfg(feature = "datasets")]
 pub mod parquet_stream;
 
+#[cfg(any(feature = "async", feature = "datasets"))]
 use crate::error::{HybridResult, HybridTrainingError};
 use std::path::PathBuf;
 
@@ -187,7 +188,7 @@ pub async fn download_file(url: &str, dest_path: &PathBuf) -> HybridResult<()> {
 }
 
 /// Synchronous version of download_file for non-async contexts.
-#[cfg(not(feature = "async"))]
+#[cfg(all(feature = "datasets", not(feature = "async")))]
 pub fn download_file_sync(url: &str, dest_path: &PathBuf) -> HybridResult<()> {
     use std::io::Write;
 

@@ -19,10 +19,10 @@ burn = { version = "0.20", default-features = false }
 
 # Backend support (optional)
 ndarray = { version = "0.16", optional = true }
-burn-cuda = { version = "0.20", optional = true }
 
-# GPU compute acceleration
-# CubeCL for custom CUDA kernels (conflict resolved via workspace wasm-bindgen-futures patch)
+# GPU compute acceleration (burn provides CUDA via burn-cuda internally)
+# NOTE: Direct cubecl dependency removed from cuda feature to avoid uuid/js-sys conflict
+# Use burn/cuda feature for basic CUDA training; use cubecl-kernels for custom CubeCL kernels
 cubecl = { workspace = true, optional = true }
 cubecl-cuda = { workspace = true, optional = true }
 
@@ -82,7 +82,9 @@ std = ["burn/std"]
 # Backend selection (choose one or more)
 ndarray = ["burn/ndarray", "dep:ndarray"]
 wgpu = ["burn/wgpu"]
-cuda = ["burn/cuda", "cubecl", "cubecl-cuda", "burn-cuda"]
+cuda = ["burn/cuda"]
+# Custom CubeCL kernel support (Flash Attention, GRU kernels) - requires explicit cubecl deps
+cubecl-kernels = ["cuda", "cubecl", "cubecl-cuda"]
 
 # Burn autodiff support (required for training)
 autodiff = ["burn/autodiff"]
@@ -146,6 +148,10 @@ required-features = ["autodiff"]
 
 [[example]]
 name = "gpt2_small_memory_optimized"
+required-features = ["autodiff"]
+
+[[example]]
+name = "train_2_8b"
 required-features = ["autodiff"]
 
 [package.metadata.docs.rs]

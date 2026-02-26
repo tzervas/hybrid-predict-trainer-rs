@@ -197,8 +197,14 @@ pub mod training_runner;
 // Hugging Face Hub integration for model sharing
 pub mod hf_integration;
 
+// Training evaluation metrics and loss tracking
+pub mod evaluation;
+
 // Dataset loaders (local and remote streaming)
 pub mod datasets;
+
+// Text tokenization utilities
+pub mod tokenizer;
 
 // Rust AI ecosystem integration (GpuDispatchable trait)
 #[cfg(feature = "ecosystem")]

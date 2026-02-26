@@ -58,10 +58,9 @@
 use crate::config::HybridTrainerConfig;
 use crate::dataset_manager::{DatasetConfig, DatasetManager};
 use crate::error::{HybridResult, HybridTrainingError};
-use crate::metrics::TrainingStatistics;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Training method for comparison.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
