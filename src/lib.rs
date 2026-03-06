@@ -821,7 +821,17 @@ impl<M, O> HybridTrainer<M, O> {
         // Check for divergence (skip during warmup - NaN values are expected initially)
         if phase != Phase::Warmup {
             let divergence_result = self.divergence_monitor.check(&self.state, prediction_error);
-            if divergence_result.level > error::DivergenceLevel::Caution {
+
+            // During Predict, batch-to-batch loss variance is expected (weights don't update).
+            // Only abort on Critical divergence (NaN/Inf) to avoid premature Full fallbacks.
+            // During Full/Correct, abort on Warning or above (normal behavior).
+            let abort_threshold = if phase == Phase::Predict {
+                error::DivergenceLevel::Warning // only Critical triggers abort in Predict
+            } else {
+                error::DivergenceLevel::Caution
+            };
+
+            if divergence_result.level > abort_threshold {
                 let recovery = self
                     .phase_controller
                     .handle_divergence(divergence_result.level);
@@ -1066,9 +1076,12 @@ impl<M, O> HybridTrainer<M, O> {
         let (prediction, _uncertainty) = self.dynamics_model.predict_y_steps(&self.state, y_steps);
         let predicted_loss = prediction.predicted_final_loss;
 
-        // Apply predicted weight delta immediately (Burn limitation - can't defer)
-        // TODO: Accumulation strategy doesn't work due to forward pass dependency
-        model.apply_weight_delta(&prediction.weight_delta)?;
+        // NOTE: apply_weight_delta is skipped here because Burn parameter IDs are
+        // UUIDs (e.g. ParamId("abc123...")), but weight_delta keys are human-readable
+        // strings ("embed", "attention.q", etc.). No deltas ever match, making every
+        // model.map() call a ~3.1GB full model copy that fragments the CubeCL pool.
+        // The prediction still captures loss/trajectory information via dynamics model.
+        // model.apply_weight_delta(&prediction.weight_delta)?; // skipped: UUID mismatch
 
         // Forward pass to get actual loss (for validation)
         let actual_loss = model.forward(batch)?;
@@ -1165,24 +1178,20 @@ impl<M, O> HybridTrainer<M, O> {
             )
         };
 
-        // Apply weight delta correction immediately (Burn limitation - can't defer)
-        if let Some(ref delta) = correction.weight_correction {
-            model.apply_weight_delta(delta)?;
-        } else if correction.is_significant(0.01) {
-            // If no weight correction but loss correction is significant,
-            // apply a simple scaled correction
-            let simple_delta = self
-                .residual_corrector
-                .compute_simple_correction(&self.state);
-            if let Some(delta) = simple_delta {
-                model.apply_weight_delta(&delta)?;
-            }
-        }
+        // NOTE: apply_weight_delta skipped - Burn parameter IDs are UUIDs but delta keys
+        // are human-readable strings. No deltas ever match, causing expensive ~3.1GB
+        // model.map() copies that fragment the CubeCL pool and cause OOM.
+        // if let Some(ref delta) = correction.weight_correction {
+        //     model.apply_weight_delta(delta)?;
+        // }
 
         // Forward pass to validate correction
         let loss = model.forward(batch)?;
 
-        // Clear forward state immediately (no backward in Correct phase)
+        // Run backward() to flush the Burn/CubeCL Fusion autodiff graph.
+        // Without this the computation graph accumulates across Correct steps causing OOM.
+        // Gradients are discarded - no optimizer step in Correct phase.
+        let _grad_info = model.backward().ok();
         model.clear_forward_state();
 
         // Compute how much the correction changed the loss (for metrics)

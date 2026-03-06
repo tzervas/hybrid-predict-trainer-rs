@@ -127,7 +127,7 @@ fn main() {
     let batch_size = 1; // Micro-batch = 1 for VRAM budget
     let seq_len = model_config.n_positions; // 512
     let grad_accum_steps = 8; // Effective batch = 8
-    let steps = if quick_mode { 50 } else { 5000 };
+    let steps = if quick_mode { 50 } else { 50_000 };
     let checkpoint_interval = 500;
     let checkpoint_dir = "/data/datasets/tritter/checkpoints/model_checkpoints";
     let hf_repo = "tzervas/hybrid-code-800m";
@@ -223,7 +223,7 @@ fn main() {
     // Initialize data source
     #[cfg(feature = "datasets")]
     let data_source_info = {
-        let data_dir = "/data/datasets/tritter/datasets/fineweb-edu/";
+        let data_dir = "/data/datasets/tritter/pretrain/fineweb-edu-10B/";
         println!("\nInitializing FineWeb-Edu parquet stream from {}...", data_dir);
         println!("(Streaming tokenized text, padding/truncating to seq_len={})", seq_len);
         "FineWeb-Edu parquet shards"
@@ -235,7 +235,7 @@ fn main() {
     #[cfg(feature = "datasets")]
     let mut batch_iterator = {
         use std::path::Path;
-        let data_dir = Path::new("/data/datasets/tritter/datasets/fineweb-edu/");
+        let data_dir = Path::new("/data/datasets/tritter/pretrain/fineweb-edu-10B/");
         match TextBatchIterator::new(data_dir, seq_len, batch_size) {
             Ok(iter) => Some(iter),
             Err(e) => {
@@ -379,33 +379,27 @@ fn main() {
             match save_result {
                 Some(Ok(())) => {
                     println!("  Model weights saved.");
-                    // Upload to HF
-                    let home_dir = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-                    let hf_token = std::fs::read_to_string(
-                        format!("{}/.cache/huggingface/token", home_dir)
-                    ).ok().map(|s| s.trim().to_string()).unwrap_or_default();
-                    if !hf_token.is_empty() {
-                        let mpk_file = format!("{weights_path}.mpk");
-                        let hf_path = format!("checkpoints/model_weights_step_{step}.mpk");
-                        let upload_url = format!(
-                            "https://huggingface.co/api/models/{hf_repo}/upload/main/{hf_path}"
-                        );
-                        let upload_result = std::process::Command::new("curl")
-                            .args(["-s", "-X", "PUT", &upload_url,
-                                "-H", &format!("Authorization: Bearer {hf_token}"),
-                                "-H", "Content-Type: application/octet-stream",
-                                "--data-binary", &format!("@{mpk_file}")])
-                            .output();
-                        match upload_result {
-                            Ok(o) if o.status.success() => {
-                                println!("  ✓ Checkpoint uploaded to HF: {hf_path}");
-                                // Delete local model weights file after upload
-                                let _ = std::fs::remove_file(&mpk_file);
-                                println!("  Deleted local model weights (saved to HF).");
-                            }
-                            Ok(o) => eprintln!("  HF upload failed: {}", o.status),
-                            Err(e) => eprintln!("  curl error: {e}"),
+                    // Upload to HF using huggingface_hub Python (handles LFS for large files)
+                    let mpk_file = format!("{weights_path}.mpk");
+                    let hf_path = format!("checkpoints/model_weights_step_{step}.mpk");
+                    let py_script = format!(
+                        "from huggingface_hub import HfApi; \
+                         api = HfApi(); \
+                         api.upload_file(path_or_fileobj='{mpk_file}', \
+                         path_in_repo='{hf_path}', repo_id='{hf_repo}', \
+                         repo_type='model', commit_message='checkpoint step {step}')"
+                    );
+                    let upload_result = std::process::Command::new("python3")
+                        .args(["-c", &py_script])
+                        .output();
+                    match upload_result {
+                        Ok(o) if o.status.success() => {
+                            println!("  ✓ Checkpoint uploaded to HF: {hf_path}");
+                            let _ = std::fs::remove_file(&mpk_file);
+                            println!("  Deleted local model weights (saved to HF).");
                         }
+                        Ok(o) => eprintln!("  HF upload failed: {}", String::from_utf8_lossy(&o.stderr)),
+                        Err(e) => eprintln!("  python3 error: {e}"),
                     }
                 }
                 Some(Err(e)) => eprintln!("  Model weight save failed: {e:?}"),
@@ -546,19 +540,20 @@ fn main() {
         let final_mpk = format!("{checkpoint_dir}/model_weights_final.mpk");
         if std::path::Path::new(&final_mpk).exists() {
             println!("\nUploading final model weights to HuggingFace...");
-            let upload_url = format!(
-                "https://huggingface.co/api/models/{hf_repo}/upload/main/model_weights_final.mpk"
+            // Upload via huggingface_hub Python (handles LFS for large files)
+            let py_script = format!(
+                "from huggingface_hub import HfApi; \
+                 api = HfApi(); \
+                 api.upload_file(path_or_fileobj='{final_mpk}', \
+                 path_in_repo='model_weights_final.mpk', repo_id='{hf_repo}', \
+                 repo_type='model', commit_message='final model weights')"
             );
-            let upload_result = std::process::Command::new("curl")
-                .args(["-s", "-X", "PUT", &upload_url,
-                    "-H", &format!("Authorization: Bearer {hf_token}"),
-                    "-H", "Content-Type: application/octet-stream",
-                    "--data-binary", &format!("@{final_mpk}")])
+            let upload_result = std::process::Command::new("python3")
+                .args(["-c", &py_script])
                 .output();
             match upload_result {
                 Ok(o) if o.status.success() => {
                     println!("  ✓ Final model weights uploaded to HF");
-                    // Clean up all local checkpoints and model files
                     println!("  Cleaning up local checkpoints...");
                     if let Ok(entries) = std::fs::read_dir(checkpoint_dir) {
                         for entry in entries.flatten() {
@@ -570,8 +565,8 @@ fn main() {
                     }
                     println!("  ✓ Local model files cleaned up (saved to HF).");
                 }
-                Ok(o) => eprintln!("  Final model upload failed: {}", o.status),
-                Err(e) => eprintln!("  curl error: {e}"),
+                Ok(o) => eprintln!("  Final model upload failed: {}", String::from_utf8_lossy(&o.stderr)),
+                Err(e) => eprintln!("  python3 error: {e}"),
             }
         }
     } else {

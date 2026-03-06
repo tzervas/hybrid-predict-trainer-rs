@@ -102,6 +102,24 @@ impl Gpt2Config {
         }
     }
 
+    /// ~1.3B parameter model designed for bf16 training on 16GB VRAM (RTX 5080).
+    ///
+    /// Architecture: n_embd=2048, n_layer=24, n_head=16, n_positions=128
+    /// VRAM budget with bf16:
+    ///   weights(2.6GB) + grads(2.6GB) + AdamW_bf16(5.2GB) + activations(~0.5GB) ≈ 11GB peak
+    /// Requires bf16 backend: Autodiff<Cuda, BF16> (not f32).
+    #[must_use]
+    pub fn gpt2_1_3b_bf16() -> Self {
+        Self {
+            vocab_size: 50257,
+            n_positions: 128,
+            n_embd: 2048,
+            n_layer: 24,
+            n_head: 16,
+            dropout: 0.0,
+        }
+    }
+
     /// ~800M parameter model designed for f32 training on 16GB VRAM (RTX 5080).
     ///
     /// Architecture: n_embd=1280, n_layer=36, n_head=20, n_positions=128

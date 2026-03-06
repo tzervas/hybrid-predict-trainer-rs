@@ -1581,13 +1581,19 @@ impl RSSMLite {
             }
         }
 
-        // Base confidence from ensemble agreement
+        // Base confidence from ensemble agreement.
+        // Normalize by current loss so that std=1.0 on loss=10 is treated as 10% spread,
+        // not as a massive uncertainty signal. Prevents LLM-scale losses from tanking
+        // agreement_confidence even when relative prediction accuracy is good.
         let (_, uncertainty) = self.predict_y_steps(state, 10);
-        let agreement_confidence = 1.0 / (1.0 + uncertainty.total);
+        let current_loss = state.loss.abs().max(1.0);
+        let normalized_std = uncertainty.total / current_loss;
+        let agreement_confidence = 1.0 / (1.0 + normalized_std);
 
-        // Historical accuracy confidence
-        // Start with moderate confidence to allow initial predictive exploration
-        // Confidence will adjust based on actual prediction accuracy
+        // Historical accuracy confidence based on RELATIVE prediction errors.
+        // prediction_errors stores relative errors (|pred - actual| / actual), so
+        // a 10% relative error gives confidence = 1/(1+0.1) = 0.91.
+        // This avoids the trap of large absolute errors on large LLM losses.
         let historical_confidence = if self.prediction_errors.len() < 10 {
             0.85 // High initial confidence to enable early predict phases (before error feedback)
         } else {
@@ -1652,12 +1658,13 @@ impl RSSMLite {
         // Invalidate cached confidence since model state is changing
         *self.cached_confidence.lock() = None;
 
-        // Record prediction error
+        // Record RELATIVE prediction error (|pred - actual| / actual).
         let (prediction, _) = self.predict_y_steps(state_before, loss_trajectory.len());
         let actual_final_loss = state_after.loss;
-        let error = (prediction.predicted_final_loss - actual_final_loss).abs();
+        let relative_error = (prediction.predicted_final_loss - actual_final_loss).abs()
+            / actual_final_loss.abs().max(1.0);
 
-        self.prediction_errors.push(error);
+        self.prediction_errors.push(relative_error);
         if self.prediction_errors.len() > 1000 {
             self.prediction_errors.remove(0);
         }
@@ -1694,12 +1701,15 @@ impl RSSMLite {
         // Invalidate cached confidence since model state is changing
         *self.cached_confidence.lock() = None;
 
-        // Record prediction error
+        // Record RELATIVE prediction error (|pred - actual| / actual).
+        // Using relative error prevents large absolute losses (LLM training: 5-15)
+        // from driving historical_confidence to near-zero via 1/(1+large_abs_error).
         let (prediction, _) = self.predict_y_steps(state, 1);
         let actual_loss = state.loss;
-        let error = (prediction.predicted_final_loss - actual_loss).abs();
+        let relative_error = (prediction.predicted_final_loss - actual_loss).abs()
+            / actual_loss.abs().max(1.0);
 
-        self.prediction_errors.push(error);
+        self.prediction_errors.push(relative_error);
         if self.prediction_errors.len() > 1000 {
             self.prediction_errors.remove(0);
         }

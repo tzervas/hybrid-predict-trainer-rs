@@ -310,7 +310,7 @@ impl From<&HybridTrainerConfig> for PhaseControllerConfig {
             full_steps: config.full_steps,
             max_predict_steps: config.max_predict_steps,
             confidence_threshold: config.confidence_threshold,
-            max_consecutive_predicts: 5,
+            max_consecutive_predicts: 15,
         }
     }
 }
