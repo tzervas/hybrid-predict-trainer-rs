@@ -26,8 +26,8 @@ cubecl-core = { version = "0.9", optional = true }
 cubecl-runtime = { version = "0.9", optional = true }
 
 # Candle for additional tensor ops and model compatibility
-candle-core = { workspace = true, optional = true }
-candle-nn = { workspace = true, optional = true }
+candle-core = { version = "0.9", optional = true, default-features = false }
+candle-nn = { version = "0.9", optional = true, default-features = false }
 
 # Serialization and configuration
 serde = { version = "1.0", features = ["derive"] }
@@ -110,5 +110,11 @@ name = "custom_predictor"
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+
+[lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+missing_errors_doc = "allow"
+must_use_candidate = "allow"
