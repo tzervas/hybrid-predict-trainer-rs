@@ -1,5 +1,10 @@
 # hybrid-predict-trainer-rs
 
+<!-- FLEET-BADGES:BEGIN -->
+[![CI](https://github.com/tzervas/hybrid-predict-trainer-rs/actions/workflows/fleet-ci.yml/badge.svg?branch=feat/core-training-loop)](https://github.com/tzervas/hybrid-predict-trainer-rs/actions/workflows/fleet-ci.yml?query=branch%3Afeat/core-training-loop)
+[![Security](https://github.com/tzervas/hybrid-predict-trainer-rs/actions/workflows/fleet-security.yml/badge.svg?branch=feat/core-training-loop)](https://github.com/tzervas/hybrid-predict-trainer-rs/actions/workflows/fleet-security.yml?query=branch%3Afeat/core-training-loop)
+<!-- FLEET-BADGES:END -->
+
 **A hybridized predictive training implementation for deep learning in Rust.**
 
 [![Crates.io](https://img.shields.io/crates/v/hybrid-predict-trainer-rs.svg)](https://crates.io/crates/hybrid-predict-trainer-rs)
