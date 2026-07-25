@@ -1,0 +1,42 @@
+# Fleet standard CI — thin caller. Policy lives in
+# https://github.com/tzervas/mycelium-workflows/blob/main/.github/workflows/reusable-fleet-ci.yml
+#
+# Strictness is chosen by the branch you are TARGETING:
+#   dev tier  (->  dev staging) check + test, one Python version, GPU/bench skipped
+#   main tier (-> main) --all-features, clippy -D warnings, doc warnings-as-errors,
+#             full Python matrix, and GPU jobs and benchmarks that RUN rather than skip.
+# The reusable workflow resolves the tier itself, so this file cannot get it wrong.
+#
+# `@v1` is a MOVING major tag: central minor and patch fixes land here
+# automatically; a major is a deliberate, reviewed move to @v2.
+name: fleet-ci
+
+on:
+  push:
+    branches: [dev, main, staging]
+  pull_request:
+    branches: [dev, main, staging]
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Force a tier (otherwise derived from the target branch)'
+        type: choice
+        options: [auto, dev, main]
+        default: auto
+
+concurrency:
+  group: fleet-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fleet-ci:
+    uses: tzervas/mycelium-workflows/.github/workflows/reusable-fleet-ci.yml@v1
+    with:
+      tier: ${{ inputs.tier || 'auto' }}
+      main-branches: 'main'
+      gpu: true
+      bench: true
+
