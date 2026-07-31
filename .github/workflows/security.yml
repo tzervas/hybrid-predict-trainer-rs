@@ -13,7 +13,7 @@ permissions:
 jobs:
   audit:
     name: Security Audit
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     steps:
       - uses: actions/checkout@v6
       - uses: rustsec/audit-check@v2.0.0
@@ -24,7 +24,7 @@ jobs:
 
   gitleaks:
     name: Secret Scanning
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -35,7 +35,7 @@ jobs:
 
   deny:
     name: Dependency Check
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, x64, podman]
     steps:
       - uses: actions/checkout@v6
       - uses: EmbarkStudios/cargo-deny-action@v2.0.15
